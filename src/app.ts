@@ -55,6 +55,7 @@ export class App {
 		onError: (message) => this.showToast(message, 'error'),
 		onMediaReady: () => this.syncMediaSession(),
 		onPlayState: (playing) => this.onPlayState(playing),
+		onRecoveryState: (recovering) => this.onPlaybackRecoveryState(recovering),
 		onTime: (current, duration) => this.renderTime(current, duration),
 	});
 
@@ -93,6 +94,7 @@ export class App {
 	private cacheAheadCount = loadOfflineTrackCount();
 	private cacheRefreshVersion = 0;
 	private cacheRefreshTail: Promise<void> = Promise.resolve();
+	private cacheSuspendedForPlaybackRecovery = false;
 
 	constructor(private readonly root: HTMLElement) {}
 
@@ -253,6 +255,7 @@ export class App {
 			cacheAheadCount === this.cacheAheadCount &&
 			this.connected &&
 			!this.reactionTrackId &&
+			!this.cacheSuspendedForPlaybackRecovery &&
 			!this.offlinePlayback &&
 			navigator.onLine
 		);
@@ -587,6 +590,19 @@ export class App {
 			this.feedbackStartedTrackId = current.track.id;
 			void this.safeFeedback('trackStarted', current);
 		}
+	}
+
+	private onPlaybackRecoveryState(recovering: boolean): void {
+		if (recovering) {
+			if (this.offlinePlayback || this.cacheSuspendedForPlaybackRecovery) return;
+			this.cacheSuspendedForPlaybackRecovery = true;
+			this.cacheRefreshVersion += 1;
+			this.cache.cancel();
+			return;
+		}
+		if (!this.cacheSuspendedForPlaybackRecovery) return;
+		this.cacheSuspendedForPlaybackRecovery = false;
+		if (this.connected && !this.offlinePlayback && navigator.onLine) void this.ensureQueueAndCache();
 	}
 
 	private renderTime(current: number, duration: number): void {

@@ -479,6 +479,30 @@ describe('App UI integration', () => {
 		expect(replace).toHaveBeenCalled();
 	});
 
+	it('frees the background cache slot while a failed proxy stream recovers', async () => {
+		const app = new App(root);
+		await app.init();
+		await settle();
+		root.querySelector<HTMLButtonElement>('#play-button')!.click();
+		await settle();
+		const audio = root.querySelector('audio')!;
+		const cancel = vi.mocked(CacheCoordinator.prototype.cancel);
+		const replace = vi.mocked(CacheCoordinator.prototype.replace);
+		cancel.mockClear();
+		replace.mockClear();
+
+		audio.dispatchEvent(new Event('error'));
+		await settle();
+		audio.dispatchEvent(new Event('error'));
+
+		expect(cancel).toHaveBeenCalledOnce();
+		expect(replace).not.toHaveBeenCalled();
+
+		audio.dispatchEvent(new Event('playing'));
+		await settle();
+		expect(replace).toHaveBeenCalled();
+	});
+
 	it('persists an adjustable offline-track limit and immediately recalculates the cache horizon', async () => {
 		const app = new App(root);
 		await app.init();

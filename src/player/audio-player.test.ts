@@ -54,7 +54,10 @@ beforeEach(() => {
 	);
 });
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+	vi.useRealTimers();
+	vi.unstubAllGlobals();
+});
 
 describe('AudioPlayer', () => {
 	it('mounts one persistent audio instance only once in the same parent', () => {
@@ -167,6 +170,137 @@ describe('AudioPlayer', () => {
 		expect(audio.crossOrigin).toBe('anonymous');
 		expect(audio.play).toHaveBeenCalledTimes(2);
 		expect(onError).not.toHaveBeenCalled();
+	});
+
+	it('retries a failed Lambda stream and restores the last playback position', async () => {
+		vi.useFakeTimers();
+		const onError = vi.fn();
+		const onPlayState = vi.fn();
+		const onRecoveryState = vi.fn();
+		const player = new AudioPlayer({
+			onEnded: vi.fn(),
+			onError,
+			onPlayState,
+			onRecoveryState,
+			onTime: vi.fn(),
+		});
+		const audio = instances[0]!;
+		const proxyUrl = 'https://lambda.example/api/media/stream?track=1';
+		player.load(track, proxyUrl, false, undefined, true);
+		await player.play();
+		audio.currentTime = 47;
+		audio.dispatchEvent(new Event('timeupdate'));
+		audio.currentTime = 0;
+
+		audio.dispatchEvent(new Event('error'));
+
+		expect(onPlayState).toHaveBeenLastCalledWith(false);
+		expect(onRecoveryState).toHaveBeenLastCalledWith(true);
+		expect(onError).not.toHaveBeenCalled();
+		await vi.advanceTimersByTimeAsync(500);
+		expect(audio.src).toBe(proxyUrl);
+		expect(audio.load).toHaveBeenCalledTimes(2);
+		expect(audio.play).toHaveBeenCalledTimes(2);
+
+		audio.dispatchEvent(new Event('loadedmetadata'));
+		expect(audio.currentTime).toBe(47);
+		expect(onRecoveryState).toHaveBeenLastCalledWith(false);
+		expect(onError).not.toHaveBeenCalled();
+	});
+
+	it('retries Lambda after the direct CDN fallback also fails', async () => {
+		vi.useFakeTimers();
+		const onError = vi.fn();
+		const player = new AudioPlayer({
+			onEnded: vi.fn(),
+			onError,
+			onPlayState: vi.fn(),
+			onTime: vi.fn(),
+		});
+		const audio = instances[0]!;
+		const proxyUrl = 'https://lambda.example/api/media/stream?track=1';
+		player.load(track, 'https://cdn.yandex.net/track.flac', false, proxyUrl);
+		await player.play();
+		audio.dispatchEvent(new Event('error'));
+		await vi.waitFor(() => expect(audio.src).toBe(proxyUrl));
+
+		audio.dispatchEvent(new Event('error'));
+		await vi.advanceTimersByTimeAsync(500);
+
+		expect(audio.src).toBe(proxyUrl);
+		expect(audio.load).toHaveBeenCalledTimes(3);
+		expect(onError).not.toHaveBeenCalled();
+	});
+
+	it('cancels a pending Lambda recovery when playback is paused or replaced', async () => {
+		vi.useFakeTimers();
+		const player = new AudioPlayer({
+			onEnded: vi.fn(),
+			onError: vi.fn(),
+			onPlayState: vi.fn(),
+			onTime: vi.fn(),
+		});
+		const audio = instances[0]!;
+		player.load(track, 'https://lambda.example/api/media/stream?track=1', false, undefined, true);
+		await player.play();
+		audio.dispatchEvent(new Event('error'));
+		player.pause();
+		await vi.advanceTimersByTimeAsync(500);
+		expect(audio.load).toHaveBeenCalledOnce();
+
+		await player.play();
+		audio.dispatchEvent(new Event('error'));
+		player.load({ ...track, id: '2' }, 'https://lambda.example/api/media/stream?track=2', false, undefined, true);
+		await vi.advanceTimersByTimeAsync(1_500);
+		expect(audio.src).toContain('track=2');
+		expect(audio.load).toHaveBeenCalledTimes(2);
+	});
+
+	it('does not seek a replacement track from stale fallback metadata', async () => {
+		const player = new AudioPlayer({
+			onEnded: vi.fn(),
+			onError: vi.fn(),
+			onPlayState: vi.fn(),
+			onTime: vi.fn(),
+		});
+		const audio = instances[0]!;
+		player.load(track, 'https://cdn.yandex.net/track.flac', false, 'https://lambda.example/api/media/stream?track=1');
+		await player.play();
+		audio.currentTime = 36;
+		audio.dispatchEvent(new Event('timeupdate'));
+		audio.dispatchEvent(new Event('error'));
+		await vi.waitFor(() => expect(audio.src).toContain('track=1'));
+
+		audio.currentTime = 0;
+		player.load({ ...track, id: '2' }, 'https://cdn.yandex.net/track-2.flac');
+		audio.dispatchEvent(new Event('loadedmetadata'));
+
+		expect(audio.currentTime).toBe(0);
+	});
+
+	it('reports one terminal error after bounded Lambda retries are exhausted', async () => {
+		vi.useFakeTimers();
+		const onError = vi.fn();
+		const player = new AudioPlayer({
+			onEnded: vi.fn(),
+			onError,
+			onPlayState: vi.fn(),
+			onTime: vi.fn(),
+		});
+		const audio = instances[0]!;
+		player.load(track, 'https://lambda.example/api/media/stream?track=1', false, undefined, true);
+		await player.play();
+
+		for (const delay of [500, 1_500, 3_000]) {
+			audio.dispatchEvent(new Event('error'));
+			await vi.advanceTimersByTimeAsync(delay);
+		}
+		audio.dispatchEvent(new Event('error'));
+		audio.dispatchEvent(new Event('error'));
+
+		expect(onError).toHaveBeenCalledOnce();
+		expect(onError).toHaveBeenCalledWith('This track could not be played.');
+		expect(audio.load).toHaveBeenCalledTimes(4);
 	});
 
 	it('primes synchronously without reporting playback or advancing the queue', () => {
