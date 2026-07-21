@@ -518,6 +518,17 @@ main {
 }
 .settings-control p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.45; grid-column: 1 / -1; }
 
+.storage-capacity {
+  width: 100%;
+  margin: 0 0 28px;
+  padding: 0 0 20px;
+  border-bottom: 1px solid var(--line);
+}
+
+.storage-capacity div { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; }
+.storage-capacity dt { font-size: 16px; font-weight: 750; }
+.storage-capacity dd { margin: 0; color: var(--muted); font-size: 13px; text-align: right; }
+
 .primary-button, .secondary-button, .danger-button {
   min-height: 50px;
   padding: 0 20px;

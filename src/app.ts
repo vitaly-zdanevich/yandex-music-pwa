@@ -4,6 +4,8 @@ import { downloadMediaBlob } from './adapters/media-download';
 import { ProxyMediaResolver, type MediaSource } from './adapters/media-resolver';
 import { IndexedDbOfflineStore, type CachedTrack, type CachedTrackMetadata } from './adapters/offline-store';
 import { SettingsClient } from './adapters/settings-client';
+import { estimateStorageCapacity } from './adapters/storage-capacity';
+import { isIphoneIos15UserAgent } from './access-policy';
 import { artistNames, formatBytes, formatMediaQuality, formatTime } from './lib/format';
 import { formatErrorText } from './lib/error-text';
 import { loadGithubHistory } from './lib/github-history';
@@ -99,6 +101,7 @@ export class App {
 	private cacheRefreshVersion = 0;
 	private cacheRefreshTail: Promise<void> = Promise.resolve();
 	private cacheSuspendedForPlaybackRecovery = false;
+	private storageCapacityVersion = 0;
 	private readonly errorQueue: string[] = [];
 	private activeErrorText?: string;
 	private errorPopupPreviousFocus?: HTMLElement;
@@ -1046,7 +1049,22 @@ export class App {
 		if (screen !== 'liked' && screen !== 'offline') this.releaseListObjectUrls();
 		window.scrollTo(0, 0);
 		activeView?.focus({ preventScroll: true });
-		if (screen === 'settings') void this.renderCommitHistory();
+		if (screen === 'settings') {
+			void this.renderCommitHistory();
+			void this.renderStorageCapacity();
+		}
+	}
+
+	private async renderStorageCapacity(): Promise<void> {
+		const version = ++this.storageCapacityVersion;
+		const row = this.element<HTMLElement>('storage-capacity');
+		row.hidden = true;
+		if (isIphoneIos15UserAgent(navigator.userAgent)) return;
+		const capacity = await estimateStorageCapacity();
+		if (version !== this.storageCapacityVersion || this.screen !== 'settings' || !capacity) return;
+		this.element<HTMLElement>('storage-capacity-value').textContent =
+			`${formatBytes(capacity.availableBytes)} available · ${formatBytes(capacity.quotaBytes)} quota`;
+		row.hidden = false;
 	}
 
 	private async renderCommitHistory(): Promise<void> {
@@ -1555,6 +1573,9 @@ function template(): string {
 							<input id="offline-track-count" type="number" min="0" max="50" step="1" inputmode="numeric" />
 							<p id="offline-preference-help"></p>
 						</div>
+						<dl id="storage-capacity" class="storage-capacity" hidden>
+							<div><dt>Estimated space left</dt><dd id="storage-capacity-value">—</dd></div>
+						</dl>
 						<div class="settings-actions"><button id="refresh-connection" type="button" class="primary-button">Check connection</button></div>
 						<p id="settings-message" class="settings-message" role="status"></p>
 						<section class="version-history" aria-labelledby="commit-history-title">

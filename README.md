@@ -23,7 +23,7 @@ This is an unofficial client. It is not affiliated with Yandex and uses private,
 - Current-track audio download, native Yandex Music link sharing, Yandex, Genius, Last.fm, Wikipedia, YouTube, and Google links, plus track/album/artist searches on MusicBrainz and Wikidata
 - A configurable rolling foreground cache of upcoming recommendations and their artwork (10 by default, 0–50)
 - An Offline screen with playback, exact stored-byte usage, per-track removal, and remove-all
-- A full-width Preferences screen that reports the proxy connection state, current version, and last 10 commits without ever accepting, transmitting, or storing a Yandex OAuth token
+- A full-width Preferences screen that reports the proxy connection state, current version, last 10 commits, and browser-estimated space left where supported, without ever accepting, transmitting, or storing a Yandex OAuth token
 - A casual-use client gate that starts the player only for an iPhone on iOS 15, or Firefox on Linux at an exact 1200×1920 screen; this is a deterrent, not authentication
 - Light and dark appearances via `prefers-color-scheme`; the dark document background is exactly `#000`
 - Persistent, closable error popups with complete stack, status, cause, network, and media diagnostics; simultaneous failures are queued instead of overwritten
@@ -248,7 +248,7 @@ The service worker keeps the application shell available, while complete audio b
 
 Download exports the current complete audio file. A cached track can open the iOS file-share sheet on the first tap. For a streaming track, the first tap prepares the complete file and changes the button to **Save file**; the second tap preserves iOS's required user activation and opens the file-share sheet. Firefox uses a normal browser download.
 
-iOS 15 does not provide Background Sync for this use, so configured upcoming tracks are fetched only while the PWA is open. Cached artwork is also supplied to Media Session, keeping the Now Playing image available without a network connection. Safari may evict website data under storage pressure, and neither a PWA nor IndexedDB can promise that downloads are permanent. The displayed usage is this app's stored audio and artwork, not Safari's total per-origin allocation.
+iOS 15 does not provide Background Sync for this use, so configured upcoming tracks are fetched only while the PWA is open. Cached artwork is also supplied to Media Session, keeping the Now Playing image available without a network connection. Safari may evict website data under storage pressure, and neither a PWA nor IndexedDB can promise that downloads are permanent. The Offline screen's usage is this app's stored audio and artwork. Preferences additionally shows the browser's estimated remaining origin quota when that API is available; the line is omitted entirely on iPhone/iOS 15.
 
 ## Extractable TypeScript SDK
 

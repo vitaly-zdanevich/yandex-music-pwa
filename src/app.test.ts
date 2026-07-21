@@ -172,6 +172,11 @@ beforeEach(() => {
 	};
 	Object.defineProperty(navigator, 'mediaSession', { configurable: true, value: mediaSession });
 	Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
+	Object.defineProperty(navigator, 'userAgent', {
+		configurable: true,
+		value: 'Mozilla/5.0 (X11; Linux x86_64; rv:141.0) Gecko/20100101 Firefox/141.0',
+	});
+	Object.defineProperty(navigator, 'storage', { configurable: true, value: undefined });
 	vi.stubGlobal('MediaMetadata', MediaMetadataStub);
 
 	share = vi.fn().mockResolvedValue(undefined);
@@ -471,6 +476,41 @@ describe('App UI integration', () => {
 		expect(navButton('player').getAttribute('aria-current')).toBe('page');
 		expect(root.querySelector('#track-title')?.textContent).toBe('Track 88');
 		expect(root.querySelector('#source-label')?.textContent).toBe('Offline download');
+	});
+
+	it('shows the estimated browser storage left in Preferences when the API is available', async () => {
+		const megabyte = 1024 ** 2;
+		const estimate = vi.fn().mockResolvedValue({ usage: 25 * megabyte, quota: 100 * megabyte });
+		Object.defineProperty(navigator, 'storage', { configurable: true, value: { estimate } });
+		const app = new App(root);
+		await app.init();
+		await settle();
+
+		navButton('settings').click();
+		await settle();
+
+		expect(estimate).toHaveBeenCalledOnce();
+		expect(root.querySelector<HTMLElement>('#storage-capacity')?.hidden).toBe(false);
+		expect(root.querySelector('#storage-capacity-value')?.textContent).toBe('75 MB available · 100 MB quota');
+	});
+
+	it('omits the storage-capacity line on an iPhone running iOS 15', async () => {
+		const estimate = vi.fn().mockResolvedValue({ usage: 1, quota: 2 });
+		Object.defineProperty(navigator, 'userAgent', {
+			configurable: true,
+			value:
+				'Mozilla/5.0 (iPhone; CPU iPhone OS 15_7_9 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.6 Mobile/15E148 Safari/604.1',
+		});
+		Object.defineProperty(navigator, 'storage', { configurable: true, value: { estimate } });
+		const app = new App(root);
+		await app.init();
+		await settle();
+
+		navButton('settings').click();
+		await settle();
+
+		expect(estimate).not.toHaveBeenCalled();
+		expect(root.querySelector<HTMLElement>('#storage-capacity')?.hidden).toBe(true);
 	});
 
 	it('pauses background caching while a persistent reaction is pending, then resumes it', async () => {
