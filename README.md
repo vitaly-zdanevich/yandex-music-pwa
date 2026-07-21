@@ -20,7 +20,7 @@ This is an unofficial client. It is not affiliated with Yandex and uses private,
 
 - My Wave recommendations with previous/next controls, full-width artwork, artist, album, title, highest-quality codec, bitrate, and file size
 - Like and dislike actions, plus a liked-tracks screen that hydrates at most 100 tracks per page
-- Current-track audio download, native Yandex Music link sharing, and Yandex, Genius, Last.fm, Wikipedia, Wikidata, YouTube, and Google links
+- Current-track audio download, native Yandex Music link sharing, Yandex, Genius, Last.fm, Wikipedia, YouTube, and Google links, plus track/album/artist searches on MusicBrainz and Wikidata
 - A configurable rolling foreground cache of upcoming recommendations and their artwork (10 by default, 0–50)
 - An Offline screen with playback, exact stored-byte usage, per-track removal, and remove-all
 - A full-width Preferences screen that reports the proxy connection state, current version, and last 10 commits without ever accepting, transmitting, or storing a Yandex OAuth token

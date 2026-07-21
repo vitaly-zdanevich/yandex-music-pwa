@@ -16,6 +16,9 @@ import {
 	geniusTrackSearchUrl,
 	googleTrackSearchUrl,
 	lastFmTrackSearchUrl,
+	musicBrainzAlbumSearchUrl,
+	musicBrainzArtistSearchUrl,
+	musicBrainzTrackSearchUrl,
 	RecommendationSession,
 	selectTracksToCache,
 	type Account,
@@ -23,7 +26,9 @@ import {
 	type LikedTrackPage,
 	type RecommendedTrack,
 	type Track,
+	wikidataAlbumSearchUrl,
 	wikidataArtistSearchUrl,
+	wikidataTrackSearchUrl,
 	wikipediaArtistSearchUrl,
 	YandexMusicClient,
 	yandexMusicTrackUrl,
@@ -1126,9 +1131,14 @@ export class App {
 			['genius-link', geniusTrackSearchUrl(track)],
 			['lastfm-link', lastFmTrackSearchUrl(track)],
 			['wikipedia-link', wikipediaArtistSearchUrl(track)],
-			['wikidata-link', wikidataArtistSearchUrl(track)],
 			['youtube-link', youtubeTrackSearchUrl(track)],
 			['google-link', googleTrackSearchUrl(track)],
+			['musicbrainz-track-link', musicBrainzTrackSearchUrl(track)],
+			['musicbrainz-album-link', musicBrainzAlbumSearchUrl(track)],
+			['musicbrainz-artist-link', musicBrainzArtistSearchUrl(track)],
+			['wikidata-track-link', wikidataTrackSearchUrl(track)],
+			['wikidata-album-link', wikidataAlbumSearchUrl(track)],
+			['wikidata-artist-link', wikidataArtistSearchUrl(track)],
 		];
 		for (const [id, href] of links) this.element<HTMLAnchorElement>(id).href = href;
 	}
@@ -1366,9 +1376,14 @@ function template(): string {
 								<a id="genius-link" target="_blank" rel="noopener noreferrer">Genius</a>
 								<a id="lastfm-link" target="_blank" rel="noopener noreferrer">Last.fm</a>
 								<a id="wikipedia-link" target="_blank" rel="noopener noreferrer">Wikipedia</a>
-								<a id="wikidata-link" target="_blank" rel="noopener noreferrer">Wikidata</a>
 								<a id="youtube-link" target="_blank" rel="noopener noreferrer">YouTube</a>
 								<a id="google-link" target="_blank" rel="noopener noreferrer">Google</a>
+								<a id="musicbrainz-track-link" target="_blank" rel="noopener noreferrer">MusicBrainz track</a>
+								<a id="musicbrainz-album-link" target="_blank" rel="noopener noreferrer">MusicBrainz album</a>
+								<a id="musicbrainz-artist-link" target="_blank" rel="noopener noreferrer">MusicBrainz artist</a>
+								<a id="wikidata-track-link" target="_blank" rel="noopener noreferrer">Wikidata track</a>
+								<a id="wikidata-album-link" target="_blank" rel="noopener noreferrer">Wikidata album</a>
+								<a id="wikidata-artist-link" target="_blank" rel="noopener noreferrer">Wikidata artist</a>
 							</nav>
 							<div class="reaction-row">
 								<button id="dislike-button" type="button" class="reaction-button dislike" aria-label="Dislike this track" aria-pressed="false"><span aria-hidden="true">−</span> Dislike</button>

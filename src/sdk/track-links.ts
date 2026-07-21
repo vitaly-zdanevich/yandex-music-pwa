@@ -14,6 +14,25 @@ const searchUrl = (baseUrl: string, parameter: string, query: string): string =>
 	return url.toString();
 };
 
+const musicBrainzSearchUrl = (
+	type: 'recording' | 'release_group' | 'artist',
+	query: string,
+): string => {
+	const url = new URL('https://musicbrainz.org/search');
+	url.searchParams.set('query', query);
+	url.searchParams.set('type', type);
+	url.searchParams.set('method', 'indexed');
+	return url.toString();
+};
+
+const trackArtistQuery = (
+	track: Pick<TrackLinkDetails, 'title' | 'artists'>,
+): string => [track.title.trim(), artistQuery(track)].filter(Boolean).join(' ');
+
+const albumArtistQuery = (
+	track: Pick<TrackLinkDetails, 'artists' | 'album'>,
+): string => [track.album?.title.trim(), artistQuery(track)].filter(Boolean).join(' ');
+
 const trackAlbumArtistQuery = (
 	track: Pick<TrackLinkDetails, 'title' | 'artists' | 'album'>,
 ): string =>
@@ -52,6 +71,39 @@ export function lastFmTrackSearchUrl(
 /** Returns an English Wikipedia search for the track's artists. */
 export function wikipediaArtistSearchUrl(track: Pick<TrackLinkDetails, 'artists'>): string {
 	return searchUrl('https://en.wikipedia.org/w/index.php', 'search', artistQuery(track));
+}
+
+/** Returns a MusicBrainz recording search for the track title and artists. */
+export function musicBrainzTrackSearchUrl(
+	track: Pick<TrackLinkDetails, 'title' | 'artists'>,
+): string {
+	return musicBrainzSearchUrl('recording', trackArtistQuery(track));
+}
+
+/** Returns a MusicBrainz release-group search for the album title and artists. */
+export function musicBrainzAlbumSearchUrl(
+	track: Pick<TrackLinkDetails, 'artists' | 'album'>,
+): string {
+	return musicBrainzSearchUrl('release_group', albumArtistQuery(track));
+}
+
+/** Returns a MusicBrainz artist search for the track's artists. */
+export function musicBrainzArtistSearchUrl(track: Pick<TrackLinkDetails, 'artists'>): string {
+	return musicBrainzSearchUrl('artist', artistQuery(track));
+}
+
+/** Returns a Wikidata search for the track title and artists. */
+export function wikidataTrackSearchUrl(
+	track: Pick<TrackLinkDetails, 'title' | 'artists'>,
+): string {
+	return searchUrl('https://www.wikidata.org/w/index.php', 'search', trackArtistQuery(track));
+}
+
+/** Returns a Wikidata search for the album title and artists. */
+export function wikidataAlbumSearchUrl(
+	track: Pick<TrackLinkDetails, 'artists' | 'album'>,
+): string {
+	return searchUrl('https://www.wikidata.org/w/index.php', 'search', albumArtistQuery(track));
 }
 
 /** Returns a Wikidata search for the track's artists. */

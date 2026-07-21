@@ -4,7 +4,12 @@ import {
 	geniusTrackSearchUrl,
 	googleTrackSearchUrl,
 	lastFmTrackSearchUrl,
+	musicBrainzAlbumSearchUrl,
+	musicBrainzArtistSearchUrl,
+	musicBrainzTrackSearchUrl,
+	wikidataAlbumSearchUrl,
 	wikidataArtistSearchUrl,
+	wikidataTrackSearchUrl,
 	wikipediaArtistSearchUrl,
 	yandexMusicTrackUrl,
 	youtubeTrackSearchUrl,
@@ -44,13 +49,56 @@ describe('track links', () => {
 		expect(lastFm.searchParams.get('q')).toBe(expectedQuery);
 	});
 
-	it('builds Wikipedia and Wikidata searches from the artist names', () => {
+	it('builds a Wikipedia search from the artist names', () => {
 		const wikipedia = new URL(wikipediaArtistSearchUrl(track));
-		const wikidata = new URL(wikidataArtistSearchUrl(track));
 		expect(`${wikipedia.origin}${wikipedia.pathname}`).toBe('https://en.wikipedia.org/w/index.php');
 		expect(wikipedia.searchParams.get('search')).toBe('Artist One Артист / Two');
-		expect(`${wikidata.origin}${wikidata.pathname}`).toBe('https://www.wikidata.org/w/index.php');
-		expect(wikidata.searchParams.get('search')).toBe('Artist One Артист / Two');
+	});
+
+	it('builds MusicBrainz searches in track, album, artist order', () => {
+		const searches = [
+			new URL(musicBrainzTrackSearchUrl(track)),
+			new URL(musicBrainzAlbumSearchUrl(track)),
+			new URL(musicBrainzArtistSearchUrl(track)),
+		];
+		expect(searches.map(({ origin, pathname }) => `${origin}${pathname}`)).toEqual([
+			'https://musicbrainz.org/search',
+			'https://musicbrainz.org/search',
+			'https://musicbrainz.org/search',
+		]);
+		expect(searches.map((url) => url.searchParams.get('type'))).toEqual([
+			'recording',
+			'release_group',
+			'artist',
+		]);
+		expect(searches.map((url) => url.searchParams.get('method'))).toEqual([
+			'indexed',
+			'indexed',
+			'indexed',
+		]);
+		expect(searches.map((url) => url.searchParams.get('query'))).toEqual([
+			'Song & Dance + Remix Artist One Артист / Two',
+			'An Album: Vol. 2 Artist One Артист / Two',
+			'Artist One Артист / Two',
+		]);
+	});
+
+	it('builds Wikidata searches in track, album, artist order', () => {
+		const searches = [
+			new URL(wikidataTrackSearchUrl(track)),
+			new URL(wikidataAlbumSearchUrl(track)),
+			new URL(wikidataArtistSearchUrl(track)),
+		];
+		expect(searches.map(({ origin, pathname }) => `${origin}${pathname}`)).toEqual([
+			'https://www.wikidata.org/w/index.php',
+			'https://www.wikidata.org/w/index.php',
+			'https://www.wikidata.org/w/index.php',
+		]);
+		expect(searches.map((url) => url.searchParams.get('search'))).toEqual([
+			'Song & Dance + Remix Artist One Артист / Two',
+			'An Album: Vol. 2 Artist One Артист / Two',
+			'Artist One Артист / Two',
+		]);
 	});
 
 	it('builds a YouTube search in track, album, artist order', () => {
@@ -75,6 +123,11 @@ describe('track links', () => {
 			artists: [{ name: '  ' }],
 		};
 		expect(new URL(geniusTrackSearchUrl(sparse)).searchParams.get('q')).toBe('Track');
+		expect(new URL(musicBrainzTrackSearchUrl(sparse)).searchParams.get('query')).toBe('Track');
+		expect(new URL(musicBrainzAlbumSearchUrl(sparse)).searchParams.get('query')).toBe('');
+		expect(new URL(musicBrainzArtistSearchUrl(sparse)).searchParams.get('query')).toBe('');
+		expect(new URL(wikidataTrackSearchUrl(sparse)).searchParams.get('search')).toBe('Track');
+		expect(new URL(wikidataAlbumSearchUrl(sparse)).searchParams.get('search')).toBe('');
 		expect(new URL(wikidataArtistSearchUrl(sparse)).searchParams.get('search')).toBe('');
 		expect(new URL(youtubeTrackSearchUrl(sparse)).searchParams.get('search_query')).toBe('Track');
 		expect(new URL(googleTrackSearchUrl(sparse)).searchParams.get('q')).toBe('Track');

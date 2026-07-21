@@ -280,6 +280,16 @@ describe('App UI integration', () => {
 		const yandex = root.querySelector<HTMLAnchorElement>('#yandex-link')!;
 		const youtube = new URL(root.querySelector<HTMLAnchorElement>('#youtube-link')!.href);
 		const google = new URL(root.querySelector<HTMLAnchorElement>('#google-link')!.href);
+		const musicBrainz = [
+			new URL(root.querySelector<HTMLAnchorElement>('#musicbrainz-track-link')!.href),
+			new URL(root.querySelector<HTMLAnchorElement>('#musicbrainz-album-link')!.href),
+			new URL(root.querySelector<HTMLAnchorElement>('#musicbrainz-artist-link')!.href),
+		];
+		const wikidata = [
+			new URL(root.querySelector<HTMLAnchorElement>('#wikidata-track-link')!.href),
+			new URL(root.querySelector<HTMLAnchorElement>('#wikidata-album-link')!.href),
+			new URL(root.querySelector<HTMLAnchorElement>('#wikidata-artist-link')!.href),
+		];
 		expect(yandex.href).toBe('https://music.yandex.ru/album/album%2F7/track/track%2F1');
 		expect(new URL(root.querySelector<HTMLAnchorElement>('#genius-link')!.href).searchParams.get('q')).toBe(
 			'Alpha Beta Track / One',
@@ -290,11 +300,40 @@ describe('App UI integration', () => {
 		expect(new URL(root.querySelector<HTMLAnchorElement>('#wikipedia-link')!.href).searchParams.get('search')).toBe(
 			'Alpha Beta',
 		);
-		expect(new URL(root.querySelector<HTMLAnchorElement>('#wikidata-link')!.href).searchParams.get('search')).toBe(
-			'Alpha Beta',
-		);
 		expect(youtube.searchParams.get('search_query')).toBe('Track / One Album Name Alpha Beta');
 		expect(google.searchParams.get('q')).toBe('Track / One Album Name Alpha Beta');
+		expect(musicBrainz.map((url) => url.searchParams.get('query'))).toEqual([
+			'Track / One Alpha Beta',
+			'Album Name Alpha Beta',
+			'Alpha Beta',
+		]);
+		expect(musicBrainz.map((url) => url.searchParams.get('type'))).toEqual([
+			'recording',
+			'release_group',
+			'artist',
+		]);
+		expect(musicBrainz.every((url) => url.searchParams.get('method') === 'indexed')).toBe(true);
+		expect(wikidata.map((url) => url.searchParams.get('search'))).toEqual([
+			'Track / One Alpha Beta',
+			'Album Name Alpha Beta',
+			'Alpha Beta',
+		]);
+		expect(
+			[...root.querySelectorAll<HTMLAnchorElement>('.track-links a')].map(({ id }) => id),
+		).toEqual([
+			'yandex-link',
+			'genius-link',
+			'lastfm-link',
+			'wikipedia-link',
+			'youtube-link',
+			'google-link',
+			'musicbrainz-track-link',
+			'musicbrainz-album-link',
+			'musicbrainz-artist-link',
+			'wikidata-track-link',
+			'wikidata-album-link',
+			'wikidata-artist-link',
+		]);
 		for (const link of root.querySelectorAll<HTMLAnchorElement>('.track-links a')) {
 			expect(link.target).toBe('_blank');
 			expect(link.rel).toContain('noopener');
