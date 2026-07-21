@@ -314,7 +314,9 @@ export class App {
 		this.element<HTMLButtonElement>('next-button').disabled = this.offlinePlayback
 			? this.offlinePlayback.index + 1 >= this.offlinePlayback.records.length
 			: this.recommendations.index + 1 >= this.recommendations.length;
-		this.element<HTMLElement>('source-label').textContent = this.offlinePlayback ? 'Offline download' : 'My Wave';
+		const sourceLabel = this.element<HTMLElement>('source-label');
+		sourceLabel.textContent = this.offlinePlayback ? 'Offline download' : '';
+		sourceLabel.hidden = !this.offlinePlayback;
 		this.currentArtworkUrl = track.artworkUrl;
 		this.renderTrackLinks(track);
 		this.renderDownloadButton(track);
@@ -1383,7 +1385,7 @@ function template(): string {
 							</div>
 						</div>
 						<div class="player-copy">
-							<p id="source-label" class="eyebrow">My Wave</p>
+							<p id="source-label" class="eyebrow" hidden></p>
 							<h1 id="track-title">—</h1>
 							<dl class="track-details">
 								<div><dt>Artist</dt><dd id="track-artist">—</dd></div>
