@@ -203,7 +203,6 @@ main {
   position: relative;
   width: 100%;
   overflow: hidden;
-  border-radius: clamp(22px, 4vw, 42px);
   background: var(--surface-soft);
   box-shadow: var(--shadow);
   isolation: isolate;
@@ -269,8 +268,8 @@ main {
 .track-details {
   display: grid;
   margin: 28px 0 0;
-  grid-template-columns: 1fr 1fr;
-  gap: 22px;
+  grid-template-columns: 1fr;
+  gap: 16px;
 }
 
 .track-details div { min-width: 0; }
@@ -285,12 +284,11 @@ main {
 }
 
 .track-details dd {
-  overflow: hidden;
   margin: 0;
   font-size: 17px;
   font-weight: 650;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .player-status { min-height: 18px; margin: 18px 0; color: var(--muted); font-size: 13px; }
@@ -529,26 +527,23 @@ main {
 }
 
 @media (max-width: 760px) {
-  .app-shell { padding-bottom: calc(82px + env(safe-area-inset-bottom)); }
-  .topbar { min-height: 62px; padding: 9px 16px; }
+  .topbar { min-height: 62px; padding: 9px 10px; gap: 8px; }
   .brand > span:last-child { display: none; }
   .brand-mark { width: 40px; height: 40px; }
 
   .main-nav {
-    position: fixed;
-    z-index: 20;
-    right: 10px;
-    bottom: max(10px, env(safe-area-inset-bottom));
-    left: 10px;
     display: grid;
-    padding: 5px;
-    border-radius: 20px;
+    min-width: 0;
+    padding: 4px;
+    border-radius: 16px;
+    flex: 1;
     grid-template-columns: repeat(3, 1fr);
-    box-shadow: 0 12px 35px rgba(0, 0, 0, 0.28);
+    box-shadow: none;
   }
 
   .main-nav button {
-    min-height: 52px;
+    min-width: 0;
+    min-height: 46px;
     padding: 3px 7px;
     flex-direction: column;
     justify-content: center;
@@ -568,9 +563,8 @@ main {
     gap: 28px;
   }
 
-  .artwork-column { width: min(78vw, 390px); }
-  .artwork-frame { border-radius: 26px; }
-  .cache-status { margin-top: 11px; font-size: 11px; }
+  .artwork-column { width: calc(100% + 36px); margin-inline: -18px; }
+  .cache-status { margin-top: 11px; padding-inline: 18px; font-size: 11px; }
   .player-copy { max-width: 520px; text-align: center; }
   .player-copy h1 { font-size: clamp(34px, 10vw, 52px); }
   .track-details { margin-top: 20px; text-align: left; }
@@ -584,6 +578,8 @@ main {
   .transport-controls .play-button { width: 68px; height: 68px; }
   .empty-player { min-height: calc(100vh - 180px); }
   .library-view, .settings-view { min-height: auto; padding-top: 34px; }
+  .library-view[data-view="liked"] { width: calc(100% + 36px); margin-inline: -18px; }
+  .library-view[data-view="liked"] .section-heading { padding-inline: 18px; }
   .section-heading { margin-bottom: 24px; align-items: start; }
   .section-heading h1, .settings-card h1 { font-size: 42px; }
   .offline-row { grid-template-columns: 52px minmax(0, 1fr); }
@@ -594,7 +590,6 @@ main {
 }
 
 @media (max-width: 390px) {
-  .artwork-column { width: min(72vw, 290px); }
   .player-copy h1 { font-size: 34px; }
   .reaction-button { padding: 0 13px; }
   .section-heading { flex-direction: column; }
