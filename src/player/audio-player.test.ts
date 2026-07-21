@@ -55,6 +55,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+	for (const audio of instances) audio.dispatchEvent(new Event('ended'));
+	vi.clearAllTimers();
 	vi.useRealTimers();
 	vi.unstubAllGlobals();
 });
@@ -99,10 +101,13 @@ describe('AudioPlayer', () => {
 		audio.dispatchEvent(new Event('playing'));
 		expect(onPlayState).toHaveBeenLastCalledWith(true);
 		expect(onMediaReady).toHaveBeenCalledOnce();
+		expect(player.playing).toBe(true);
 
 		audio.paused = true;
 		audio.dispatchEvent(new Event('pause'));
 		expect(onPlayState).toHaveBeenLastCalledWith(false);
+		expect(player.playing).toBe(false);
+		expect(player.playbackRequested).toBe(true);
 
 		audio.dispatchEvent(new Event('loadedmetadata'));
 		expect(onMediaReady).toHaveBeenCalledTimes(2);
@@ -132,6 +137,46 @@ describe('AudioPlayer', () => {
 		await vi.waitFor(() => expect(audio.play).toHaveBeenCalledTimes(2));
 		expect(onError).not.toHaveBeenCalled();
 		expect(onPlayState).toHaveBeenLastCalledWith(true);
+	});
+
+	it('retries an aborted play when iOS never emits canplay', async () => {
+		vi.useFakeTimers();
+		const onError = vi.fn();
+		const player = new AudioPlayer({
+			onEnded: vi.fn(),
+			onError,
+			onPlayState: vi.fn(),
+			onTime: vi.fn(),
+		});
+		const audio = instances[0]!;
+		audio.play.mockRejectedValueOnce(new DOMException('Source changed', 'AbortError'));
+		player.load(track, 'https://cdn.yandex.net/track.flac');
+
+		await player.play();
+		await vi.advanceTimersByTimeAsync(2_000);
+
+		expect(audio.play).toHaveBeenCalledTimes(2);
+		expect(onError).not.toHaveBeenCalled();
+	});
+
+	it('keeps the aborted-play retry after a late timeupdate', async () => {
+		vi.useFakeTimers();
+		const player = new AudioPlayer({
+			onEnded: vi.fn(),
+			onError: vi.fn(),
+			onPlayState: vi.fn(),
+			onTime: vi.fn(),
+		});
+		const audio = instances[0]!;
+		audio.play.mockRejectedValueOnce(new DOMException('Source changed', 'AbortError'));
+		player.load(track, 'https://cdn.yandex.net/track.flac');
+
+		await player.play();
+		audio.currentTime = 0.1;
+		audio.dispatchEvent(new Event('timeupdate'));
+		await vi.advanceTimersByTimeAsync(2_000);
+
+		expect(audio.play).toHaveBeenCalledTimes(2);
 	});
 
 	it('does not retry an aborted play after playback is paused', async () => {
@@ -172,6 +217,153 @@ describe('AudioPlayer', () => {
 		expect(onError).not.toHaveBeenCalled();
 	});
 
+	it('switches to Lambda when direct CDN play rejects without a media error event', async () => {
+		const onError = vi.fn();
+		const player = new AudioPlayer({
+			onEnded: vi.fn(),
+			onError,
+			onPlayState: vi.fn(),
+			onTime: vi.fn(),
+		});
+		const audio = instances[0]!;
+		const proxyUrl = 'https://lambda.example/api/media/stream';
+		audio.play.mockRejectedValueOnce(new DOMException('Network failed', 'NotSupportedError'));
+		player.load(track, 'https://cdn.yandex.net/track.flac', false, proxyUrl);
+
+		await player.play();
+
+		expect(audio.src).toBe(proxyUrl);
+		expect(audio.play).toHaveBeenCalledTimes(2);
+		expect(onError).not.toHaveBeenCalled();
+	});
+
+	it('recovers a waiting direct stream that never emits an error', async () => {
+		vi.useFakeTimers();
+		const onError = vi.fn();
+		const onPlayState = vi.fn();
+		const onRecoveryState = vi.fn();
+		const player = new AudioPlayer({
+			onEnded: vi.fn(),
+			onError,
+			onPlayState,
+			onRecoveryState,
+			onTime: vi.fn(),
+		});
+		const audio = instances[0]!;
+		const directUrl = 'https://cdn.yandex.net/track.flac';
+		const proxyUrl = 'https://lambda.example/api/media/stream?track=1';
+		player.load(track, directUrl, false, proxyUrl);
+		await player.play();
+		audio.currentTime = 24;
+		audio.dispatchEvent(new Event('timeupdate'));
+
+		audio.dispatchEvent(new Event('waiting'));
+
+		expect(player.playing).toBe(false);
+		expect(onPlayState).toHaveBeenLastCalledWith(false);
+		expect(onRecoveryState).toHaveBeenLastCalledWith(true);
+		await vi.advanceTimersByTimeAsync(5_000);
+		expect(audio.src).toBe(proxyUrl);
+		expect(audio.play).toHaveBeenCalledTimes(2);
+		expect(onError).not.toHaveBeenCalled();
+	});
+
+	it('cancels waiting recovery after playback makes stable progress', async () => {
+		vi.useFakeTimers();
+		const onRecoveryState = vi.fn();
+		const player = new AudioPlayer({
+			onEnded: vi.fn(),
+			onError: vi.fn(),
+			onPlayState: vi.fn(),
+			onRecoveryState,
+			onTime: vi.fn(),
+		});
+		const audio = instances[0]!;
+		const directUrl = 'https://cdn.yandex.net/track.flac';
+		player.load(track, directUrl, false, 'https://lambda.example/api/media/stream?track=1');
+		await player.play();
+		audio.dispatchEvent(new Event('stalled'));
+		audio.currentTime = 4;
+		audio.dispatchEvent(new Event('timeupdate'));
+		audio.currentTime = 7;
+		await vi.advanceTimersByTimeAsync(3_000);
+		await vi.advanceTimersByTimeAsync(2_000);
+
+		expect(audio.src).toBe(directUrl);
+		expect(audio.load).toHaveBeenCalledOnce();
+		expect(onRecoveryState).toHaveBeenNthCalledWith(1, true);
+		expect(onRecoveryState).toHaveBeenLastCalledWith(false);
+	});
+
+	it('recovers when current time silently stops advancing', async () => {
+		vi.useFakeTimers();
+		const player = new AudioPlayer({
+			onEnded: vi.fn(),
+			onError: vi.fn(),
+			onPlayState: vi.fn(),
+			onTime: vi.fn(),
+		});
+		const audio = instances[0]!;
+		const proxyUrl = 'https://lambda.example/api/media/stream?track=1';
+		player.load(track, 'https://cdn.yandex.net/track.flac', false, proxyUrl);
+		await player.play();
+		audio.currentTime = 15;
+		audio.dispatchEvent(new Event('timeupdate'));
+
+		await vi.advanceTimersByTimeAsync(10_000);
+
+		expect(audio.src).toBe(proxyUrl);
+		expect(audio.play).toHaveBeenCalledTimes(2);
+	});
+
+	it('does not reload healthy lock-screen playback when timeupdate events are throttled', async () => {
+		vi.useFakeTimers();
+		const player = new AudioPlayer({
+			onEnded: vi.fn(),
+			onError: vi.fn(),
+			onPlayState: vi.fn(),
+			onTime: vi.fn(),
+		});
+		const audio = instances[0]!;
+		const directUrl = 'https://cdn.yandex.net/track.flac';
+		player.load(track, directUrl, false, 'https://lambda.example/api/media/stream?track=1');
+		await player.play();
+		audio.currentTime = 12;
+		audio.dispatchEvent(new Event('timeupdate'));
+
+		audio.currentTime = 20;
+		await vi.advanceTimersByTimeAsync(10_000);
+
+		expect(audio.src).toBe(directUrl);
+		expect(audio.load).toHaveBeenCalledOnce();
+		expect(audio.play).toHaveBeenCalledOnce();
+	});
+
+	it('keeps an error retry scheduled after one late timeupdate', async () => {
+		vi.useFakeTimers();
+		const player = new AudioPlayer({
+			onEnded: vi.fn(),
+			onError: vi.fn(),
+			onPlayState: vi.fn(),
+			onTime: vi.fn(),
+		});
+		const audio = instances[0]!;
+		const proxyUrl = 'https://lambda.example/api/media/stream?track=1';
+		player.load(track, proxyUrl, false, undefined, true);
+		await player.play();
+		audio.currentTime = 20;
+		audio.dispatchEvent(new Event('timeupdate'));
+
+		audio.dispatchEvent(new Event('error'));
+		audio.currentTime = 20.1;
+		audio.dispatchEvent(new Event('timeupdate'));
+		await vi.advanceTimersByTimeAsync(500);
+
+		expect(audio.src).toBe(proxyUrl);
+		expect(audio.load).toHaveBeenCalledTimes(2);
+		expect(audio.play).toHaveBeenCalledTimes(2);
+	});
+
 	it('retries a failed Lambda stream and restores the last playback position', async () => {
 		vi.useFakeTimers();
 		const onError = vi.fn();
@@ -206,6 +398,10 @@ describe('AudioPlayer', () => {
 
 		audio.dispatchEvent(new Event('loadedmetadata'));
 		expect(audio.currentTime).toBe(47);
+		audio.currentTime = 47.5;
+		audio.dispatchEvent(new Event('timeupdate'));
+		audio.currentTime = 50.5;
+		await vi.advanceTimersByTimeAsync(3_000);
 		expect(onRecoveryState).toHaveBeenLastCalledWith(false);
 		expect(onError).not.toHaveBeenCalled();
 	});

@@ -398,6 +398,26 @@ describe('App UI integration', () => {
 		expect(audio.currentTime).toBe(75);
 	});
 
+	it('keeps autoplay intent when Next is tapped before the playing event arrives', async () => {
+		const app = new App(root);
+		await app.init();
+		await settle();
+		const playMedia = vi.mocked(HTMLMediaElement.prototype.play);
+		playMedia.mockClear();
+		playMedia.mockImplementationOnce(function (this: HTMLMediaElement) {
+			Object.defineProperty(this, 'paused', { configurable: true, value: false });
+			return Promise.resolve();
+		});
+
+		root.querySelector<HTMLButtonElement>('#play-button')!.click();
+		root.querySelector<HTMLButtonElement>('#next-button')!.click();
+		await settle();
+
+		expect(root.querySelector('#track-title')?.textContent).toBe('Track 2');
+		expect(playMedia).toHaveBeenCalledTimes(2);
+		expect(root.querySelector('#play-button')?.getAttribute('aria-label')).toBe('Pause');
+	});
+
 	it('navigates through Liked, Offline, Preferences, and the Preferences Back button using real controls', async () => {
 		const offlineTrack = makeTrack(88);
 		const offlineCached = cached(offlineTrack);
@@ -485,6 +505,7 @@ describe('App UI integration', () => {
 	});
 
 	it('frees the background cache slot while a failed proxy stream recovers', async () => {
+		const now = vi.spyOn(Date, 'now').mockReturnValue(0);
 		const app = new App(root);
 		await app.init();
 		await settle();
@@ -504,6 +525,11 @@ describe('App UI integration', () => {
 		expect(replace).not.toHaveBeenCalled();
 
 		audio.dispatchEvent(new Event('playing'));
+		audio.currentTime = 1;
+		audio.dispatchEvent(new Event('timeupdate'));
+		now.mockReturnValue(3_000);
+		audio.currentTime = 4;
+		audio.dispatchEvent(new Event('timeupdate'));
 		await settle();
 		expect(replace).toHaveBeenCalled();
 	});

@@ -500,7 +500,7 @@ export class App {
 
 	private async next(autoPlay: boolean, sendSkip = true): Promise<void> {
 		const navigation = ++this.navigationVersion;
-		if (!sendSkip || (autoPlay && (this.audio.playing || this.resumeAfterNavigation))) {
+		if (!sendSkip || (autoPlay && (this.audio.playbackRequested || this.resumeAfterNavigation))) {
 			this.resumeAfterNavigation = true;
 		}
 		if (this.offlinePlayback) {
@@ -550,7 +550,7 @@ export class App {
 	private async previous(): Promise<void> {
 		if (this.offlinePlayback ? this.offlinePlayback.index === 0 : this.recommendations.index === 0) return;
 		const navigation = ++this.navigationVersion;
-		if (this.audio.playing || this.resumeAfterNavigation) this.resumeAfterNavigation = true;
+		if (this.audio.playbackRequested || this.resumeAfterNavigation) this.resumeAfterNavigation = true;
 		const previous = this.currentRecommended;
 		if (previous) void this.safeFeedback('skip', previous, this.audio.currentTime);
 		this.audio.pause();

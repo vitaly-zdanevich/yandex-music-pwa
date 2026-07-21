@@ -11,6 +11,10 @@ export interface PlayerEvents {
 
 export class AudioPlayer {
 	private static readonly mediaRetryDelaysMs = [500, 1_500, 3_000] as const;
+	private static readonly abortRetryDelayMs = 2_000;
+	private static readonly stalledRecoveryDelayMs = 5_000;
+	private static readonly progressWatchdogDelayMs = 10_000;
+	private static readonly stableRecoveryTimeMs = 3_000;
 	private readonly audio = new Audio();
 	private readonly silentSource = createSilentWavUrl();
 	private objectUrl?: string;
@@ -20,7 +24,11 @@ export class AudioPlayer {
 	private activeProxyUrl?: string;
 	private mediaRetryAttempt = 0;
 	private pendingMediaRetry?: ReturnType<typeof setTimeout>;
+	private pendingStalledRecovery?: ReturnType<typeof setTimeout>;
+	private pendingProgressWatchdog?: ReturnType<typeof setTimeout>;
 	private lastPlaybackTime = 0;
+	private recoveryProgressStartedAt?: number;
+	private recoveryProgressStartedTime?: number;
 	private terminalMediaError = false;
 	private recovering = false;
 	private wantsPlayback = false;
@@ -29,6 +37,7 @@ export class AudioPlayer {
 	private mountedIn?: HTMLElement;
 	private sourceRevision = 0;
 	private pendingAbortRetry?: EventListener;
+	private pendingAbortRetryTimeout?: number;
 	private pendingPositionRestore?: EventListener;
 
 	constructor(private readonly events: PlayerEvents) {
@@ -38,6 +47,11 @@ export class AudioPlayer {
 		this.audio.setAttribute('aria-hidden', 'true');
 		this.audio.addEventListener('ended', () => {
 			if (!this.priming && this.loadedTrackId) {
+				this.cancelAbortRetry();
+				this.cancelMediaRetry();
+				this.cancelPlaybackWatchdogs();
+				this.clearPositionRestore();
+				this.setRecoveryState(false);
 				this.wantsPlayback = false;
 				this.reportPlayState(false);
 				events.onEnded();
@@ -47,20 +61,25 @@ export class AudioPlayer {
 			if (!this.priming && this.audio.paused) this.reportPlayState(false);
 		});
 		this.audio.addEventListener('playing', () => {
-			if (!this.priming && this.loadedTrackId) {
-				this.terminalMediaError = false;
-				this.cancelMediaRetry();
-				this.setRecoveryState(false);
+			if (!this.priming && this.loadedTrackId && this.wantsPlayback) {
+				this.cancelAbortRetry();
+				if (this.recovering) {
+					this.recoveryProgressStartedAt ??= Date.now();
+					this.recoveryProgressStartedTime ??= this.currentPlaybackTime();
+				}
+				this.armProgressWatchdog();
 				this.reportPlayState(true);
 				events.onMediaReady?.();
 			}
 		});
+		this.audio.addEventListener('waiting', () => this.onPlaybackStalled());
+		this.audio.addEventListener('stalled', () => this.onPlaybackStalled());
 		this.audio.addEventListener('loadedmetadata', () => {
 			if (!this.priming && this.loadedTrackId) events.onMediaReady?.();
 		});
 		this.audio.addEventListener('timeupdate', () => {
 			const current = this.audio.currentTime || 0;
-			if (current > this.lastPlaybackTime) this.lastPlaybackTime = current;
+			if (current > this.lastPlaybackTime) this.onPlaybackProgress(current);
 			events.onTime(current, Number.isFinite(this.audio.duration) ? this.audio.duration : 0);
 		});
 		this.audio.addEventListener('durationchange', () =>
@@ -74,7 +93,11 @@ export class AudioPlayer {
 	}
 
 	get playing(): boolean {
-		return !this.audio.paused;
+		return this.reportedPlaying;
+	}
+
+	get playbackRequested(): boolean {
+		return this.wantsPlayback;
 	}
 
 	get currentTime(): number {
@@ -92,6 +115,7 @@ export class AudioPlayer {
 	primeForUserGesture(): void {
 		this.cancelAbortRetry();
 		this.cancelMediaRetry();
+		this.cancelPlaybackWatchdogs();
 		this.clearPositionRestore();
 		this.setRecoveryState(false);
 		this.sourceRevision += 1;
@@ -115,9 +139,11 @@ export class AudioPlayer {
 	load(track: Track, source: string, isObjectUrl = false, fallbackUrl?: string, useCors = false): void {
 		this.cancelAbortRetry();
 		this.cancelMediaRetry();
+		this.cancelPlaybackWatchdogs();
 		this.clearPositionRestore();
 		this.setRecoveryState(false);
 		this.sourceRevision += 1;
+		this.wantsPlayback = false;
 		this.audio.pause();
 		this.priming = false;
 		const previousObjectUrl = this.objectUrl;
@@ -128,7 +154,6 @@ export class AudioPlayer {
 		this.mediaRetryAttempt = 0;
 		this.lastPlaybackTime = 0;
 		this.terminalMediaError = false;
-		this.wantsPlayback = false;
 		this.setCorsMode(useCors);
 		this.audio.src = source;
 		this.objectUrl = isObjectUrl ? source : undefined;
@@ -169,7 +194,13 @@ export class AudioPlayer {
 				this.retryOnCanPlay(sourceRevision);
 				return;
 			}
-			if (!(error instanceof DOMException && error.name === 'NotAllowedError') && this.scheduleMediaRetry()) return;
+			if (!(error instanceof DOMException && error.name === 'NotAllowedError') && this.canRecoverCurrentSource()) {
+				this.cancelPlaybackWatchdogs();
+				this.setRecoveryState(true);
+				this.reportPlayState(false);
+				await this.recoverMediaSource();
+				return;
+			}
 			const message = error instanceof DOMException && error.name === 'NotAllowedError'
 				? 'Tap play again to allow audio on this device.'
 				: 'Playback could not start.';
@@ -181,6 +212,7 @@ export class AudioPlayer {
 		this.wantsPlayback = false;
 		this.cancelAbortRetry();
 		this.cancelMediaRetry();
+		this.cancelPlaybackWatchdogs();
 		this.setRecoveryState(false);
 		this.audio.pause();
 	}
@@ -189,6 +221,7 @@ export class AudioPlayer {
 		this.wantsPlayback = false;
 		this.cancelAbortRetry();
 		this.cancelMediaRetry();
+		this.cancelPlaybackWatchdogs();
 		this.clearPositionRestore();
 		this.setRecoveryState(false);
 		this.sourceRevision += 1;
@@ -211,6 +244,9 @@ export class AudioPlayer {
 		const target = Math.max(0, Math.min(seconds, this.audio.duration || seconds));
 		this.audio.currentTime = target;
 		this.lastPlaybackTime = target;
+		this.cancelProgressWatchdog();
+		this.resetRecoveryProgress();
+		this.armProgressWatchdog();
 	}
 
 	private releaseObjectUrl(): void {
@@ -219,7 +255,15 @@ export class AudioPlayer {
 	}
 
 	private async handleError(): Promise<void> {
-		if (this.priming || this.terminalMediaError) return;
+		if (this.priming || this.terminalMediaError || !this.wantsPlayback) return;
+		this.cancelPlaybackWatchdogs();
+		this.setRecoveryState(true);
+		this.reportPlayState(false);
+		await this.recoverMediaSource();
+	}
+
+	private async recoverMediaSource(): Promise<void> {
+		if (!this.wantsPlayback) return;
 		if (this.fallbackUrl && !this.fallbackAttempted) {
 			const resumeAt = this.resumePosition();
 			const shouldResume = this.wantsPlayback;
@@ -241,6 +285,36 @@ export class AudioPlayer {
 		this.reportTerminalError('This track could not be played.');
 	}
 
+	private onPlaybackStalled(): void {
+		this.beginStalledRecovery(AudioPlayer.stalledRecoveryDelayMs);
+	}
+
+	private beginStalledRecovery(delayMs: number): void {
+		if (this.priming || this.terminalMediaError || !this.canRecoverCurrentSource()) return;
+		if (!this.wantsPlayback || !this.loadedTrackId || this.pendingMediaRetry !== undefined) return;
+		this.cancelProgressWatchdog();
+		this.resetRecoveryProgress();
+		this.setRecoveryState(true);
+		this.reportPlayState(false);
+		if (this.pendingStalledRecovery !== undefined) return;
+		if (delayMs <= 0) {
+			void this.recoverMediaSource();
+			return;
+		}
+		const revision = this.sourceRevision;
+		const playbackTime = this.currentPlaybackTime();
+		this.pendingStalledRecovery = globalThis.setTimeout(() => {
+			this.pendingStalledRecovery = undefined;
+			if (!this.wantsPlayback || revision !== this.sourceRevision) return;
+			const current = this.currentPlaybackTime();
+			if (current > playbackTime) {
+				this.onPlaybackProgress(current);
+				return;
+			}
+			void this.recoverMediaSource();
+		}, delayMs);
+	}
+
 	private scheduleMediaRetry(): boolean {
 		if (!this.wantsPlayback || !this.activeProxyUrl) return false;
 		if (this.pendingMediaRetry !== undefined) return true;
@@ -250,6 +324,7 @@ export class AudioPlayer {
 		const revision = this.sourceRevision;
 		const proxyUrl = this.activeProxyUrl;
 		this.cancelAbortRetry();
+		this.cancelPlaybackWatchdogs();
 		this.setRecoveryState(true);
 		this.reportPlayState(false);
 		this.pendingMediaRetry = globalThis.setTimeout(() => {
@@ -289,25 +364,109 @@ export class AudioPlayer {
 	}
 
 	private retryOnCanPlay(sourceRevision: number): void {
+		this.cancelAbortRetry();
 		const retry: EventListener = () => {
-			this.pendingAbortRetry = undefined;
+			if (this.pendingAbortRetry !== retry) return;
+			this.cancelAbortRetry();
 			if (!this.wantsPlayback || sourceRevision !== this.sourceRevision) return;
 			void this.attemptPlayback(0, sourceRevision);
 		};
 		this.pendingAbortRetry = retry;
 		this.audio.addEventListener('canplay', retry, { once: true });
+		this.pendingAbortRetryTimeout = globalThis.setTimeout(retry, AudioPlayer.abortRetryDelayMs);
 	}
 
 	private cancelAbortRetry(): void {
-		if (!this.pendingAbortRetry) return;
-		this.audio.removeEventListener('canplay', this.pendingAbortRetry);
+		if (this.pendingAbortRetry) this.audio.removeEventListener('canplay', this.pendingAbortRetry);
 		this.pendingAbortRetry = undefined;
+		if (this.pendingAbortRetryTimeout !== undefined) globalThis.clearTimeout(this.pendingAbortRetryTimeout);
+		this.pendingAbortRetryTimeout = undefined;
 	}
 
 	private cancelMediaRetry(): void {
 		if (this.pendingMediaRetry === undefined) return;
 		globalThis.clearTimeout(this.pendingMediaRetry);
 		this.pendingMediaRetry = undefined;
+	}
+
+	private canRecoverCurrentSource(): boolean {
+		return Boolean(this.fallbackUrl || this.activeProxyUrl);
+	}
+
+	private currentPlaybackTime(): number {
+		return Number.isFinite(this.audio.currentTime) ? Math.max(0, this.audio.currentTime) : 0;
+	}
+
+	private onPlaybackProgress(current: number): void {
+		this.lastPlaybackTime = Math.max(this.lastPlaybackTime, current);
+		this.cancelStalledRecovery();
+		if (!this.recovering) {
+			this.cancelMediaRetry();
+			this.terminalMediaError = false;
+		}
+		if (!this.audio.paused) this.reportPlayState(true);
+		this.markRecoveryProgress(current);
+		this.cancelProgressWatchdog();
+		this.armProgressWatchdog();
+	}
+
+	private armProgressWatchdog(
+		delayMs = this.recovering ? AudioPlayer.stableRecoveryTimeMs : AudioPlayer.progressWatchdogDelayMs,
+	): void {
+		if (this.pendingProgressWatchdog !== undefined) return;
+		if (!this.wantsPlayback || this.audio.paused || !this.canRecoverCurrentSource()) return;
+		const revision = this.sourceRevision;
+		const playbackTime = this.currentPlaybackTime();
+		this.pendingProgressWatchdog = globalThis.setTimeout(() => {
+			this.pendingProgressWatchdog = undefined;
+			if (!this.wantsPlayback || this.audio.paused || revision !== this.sourceRevision) return;
+			const current = this.currentPlaybackTime();
+			if (current > playbackTime) {
+				this.onPlaybackProgress(current);
+				return;
+			}
+			this.beginStalledRecovery(0);
+		}, delayMs);
+	}
+
+	private markRecoveryProgress(current: number): void {
+		if (!this.recovering) return;
+		const now = Date.now();
+		this.recoveryProgressStartedAt ??= now;
+		this.recoveryProgressStartedTime ??= current;
+		if (
+			now - this.recoveryProgressStartedAt >= AudioPlayer.stableRecoveryTimeMs &&
+			current - this.recoveryProgressStartedTime >= AudioPlayer.stableRecoveryTimeMs / 1_000
+		) {
+			this.mediaRetryAttempt = 0;
+			this.cancelMediaRetry();
+			this.terminalMediaError = false;
+			this.setRecoveryState(false);
+			this.resetRecoveryProgress();
+		}
+	}
+
+	private resetRecoveryProgress(): void {
+		this.recoveryProgressStartedAt = undefined;
+		this.recoveryProgressStartedTime = undefined;
+	}
+
+	private cancelStalledRecovery(): void {
+		if (this.pendingStalledRecovery === undefined) return;
+		globalThis.clearTimeout(this.pendingStalledRecovery);
+		this.pendingStalledRecovery = undefined;
+	}
+
+	private cancelProgressWatchdog(): void {
+		if (this.pendingProgressWatchdog === undefined) return;
+		globalThis.clearTimeout(this.pendingProgressWatchdog);
+		this.pendingProgressWatchdog = undefined;
+	}
+
+	private cancelPlaybackWatchdogs(): void {
+		this.cancelStalledRecovery();
+		this.cancelProgressWatchdog();
+		this.resetRecoveryProgress();
 	}
 
 	private clearPositionRestore(): void {
@@ -318,6 +477,7 @@ export class AudioPlayer {
 
 	private reportTerminalError(message: string): void {
 		this.wantsPlayback = false;
+		this.cancelPlaybackWatchdogs();
 		this.setRecoveryState(false);
 		this.reportPlayState(false);
 		if (this.terminalMediaError) return;
