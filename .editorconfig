@@ -1,0 +1,6 @@
+root = true
+
+[*.{js,mjs,cjs,ts,tsx}]
+indent_style = tab
+indent_size = tab
+tab_width = 2

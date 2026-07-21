@@ -18,11 +18,12 @@ This is an unofficial client. It is not affiliated with Yandex and uses private,
 
 ## What is included
 
-- My Wave recommendations with previous/next controls, artwork, artist, album, and title
+- My Wave recommendations with previous/next controls, full-width artwork, artist, album, title, highest-quality codec, bitrate, and file size
 - Like and dislike actions, plus a liked-tracks screen that hydrates at most 100 tracks per page
-- A rolling foreground cache of the next 10 recommendations and their artwork
+- Current-track audio download, native Yandex Music link sharing, and Yandex, Genius, Last.fm, Wikipedia, Wikidata, YouTube, and Google links
+- A configurable rolling foreground cache of upcoming recommendations and their artwork (10 by default, 0–50)
 - An Offline screen with playback, exact stored-byte usage, per-track removal, and remove-all
-- A Preferences screen that reports the proxy connection state without ever accepting, transmitting, or storing a Yandex OAuth token
+- A full-width Preferences screen that reports the proxy connection state, current version, and last 10 commits without ever accepting, transmitting, or storing a Yandex OAuth token
 - A casual-use client gate that starts the player only for an iPhone on iOS 15, or Firefox on Linux at an exact 1200×1920 screen; this is a deterrent, not authentication
 - Light and dark appearances via `prefers-color-scheme`; the dark document background is exactly `#000`
 - iOS home-screen icons, service-worker app-shell caching, Media Session controls, and an iOS 15 build target
@@ -117,6 +118,12 @@ npm run build:proxy      # native release build for the current machine
 CI also checks Rust formatting and Clippy, performs an ARM64 release check with `target-cpu=neoverse-n1`, validates Terraform, runs the browser tests, and creates a production web build. Every push to `main` deploys that build to GitHub Pages only after all three CI jobs pass. The separate Sonar workflow generates TypeScript and Rust LCOV reports before scanning both source trees. See `.github/workflows/ci.yml` and `.github/workflows/build.yml`.
 
 The Vite production configuration targets Safari 15, minifies JavaScript and CSS, omits source maps, and generates the app-shell service worker.
+
+### Versioning
+
+Every commit must increment the stable SemVer in `package.json`: use a minor increment for a feature and a patch increment for a fix or maintenance change. Keep `package-lock.json`, `proxy/Cargo.toml`, and `proxy/Cargo.lock` on the same version. `npm run check:version` validates the working tree locally. CI validates every commit in the pushed or pull-request range against its parent and also requires a pull-request result to exceed the current base-branch version.
+
+Preferences displays the built-in current version and loads the latest 10 GitHub commits with the version recorded in each commit. That history is cached in `sessionStorage` for 10 minutes; the current version remains available when GitHub or the network is unavailable.
 
 ## Store the Yandex token in AWS
 
@@ -232,15 +239,19 @@ Thus, one million calls can be free while compute duration or transferred bytes 
 
 Preferences only checks the server configuration and reconnects. It never asks for the token. When upgrading from a version that had a credential form, deploy the updated Lambda first, then publish the PWA and close/reopen any already-running Home Screen app once; the removed server route makes a temporarily stale client unable to submit credentials.
 
-The lock screen shows the current artwork, title, artist, and album, with play, pause, previous, and next controls. Custom like/dislike lock-screen actions are not part of the Media Session API, so those remain in the app. A track that has started can continue after locking the phone on iOS 15.4 and later. WebKit's standalone-PWA background-audio fix shipped in iOS 15.4, so iOS 15.0–15.3 cannot provide reliable screen-off playback: <https://bugs.webkit.org/show_bug.cgi?id=198277>. Track transitions are driven by the page's `ended` handler and replace the audio source; WebKit reports that exact screen-off sequence working by iOS 15.7.2: <https://bugs.webkit.org/show_bug.cgi?id=221413>. Treat continuous locked-screen queues as requiring iOS 15.7.2 unless a physical-device test establishes an earlier point release.
+iOS caches the Home Screen icon independently of the service worker. After an icon update, remove the existing Home Screen app and add it again; reopening alone does not refresh the small app badge shown over lock-screen artwork.
 
-The service worker keeps the application shell available, while complete audio blobs and artwork are stored in IndexedDB. The rolling cache retains the next 10 recommendations and evicts tracks that fall behind while online; it does not prune while offline playback is active. The Offline screen reports the exact bytes stored by this app and lets you play or delete individual downloads or clear all of them.
+The lock screen shows the current artwork, title, artist, and album, with play, pause, previous, and next controls. Custom like/dislike lock-screen actions are not part of the Media Session API, so those remain in the app. A track that has started can continue after locking the phone on iOS 15.4 and later. WebKit's standalone-PWA background-audio fix shipped in iOS 15.4, so iOS 15.0–15.3 cannot provide reliable screen-off playback: <https://bugs.webkit.org/show_bug.cgi?id=198277>. The player keeps one connected audio element and prepares only the next source so its `ended` handler can assign that source before yielding to IndexedDB or the network. WebKit reports that screen-off sequence working by iOS 15.7.2: <https://bugs.webkit.org/show_bug.cgi?id=221413>. Treat continuous locked-screen queues as requiring iOS 15.7.2 unless a physical-device test establishes an earlier point release.
 
-iOS 15 does not provide Background Sync for this use, so the next 10 tracks are fetched only while the PWA is open. Cached artwork is also supplied to Media Session, keeping the Now Playing image available without a network connection. Safari may evict website data under storage pressure, and neither a PWA nor IndexedDB can promise that downloads are permanent. The displayed usage is this app's stored audio and artwork, not Safari's total per-origin allocation.
+The service worker keeps the application shell available, while complete audio blobs and artwork are stored in IndexedDB. Preferences lets you keep 0–50 upcoming recommendations offline, defaulting to 10; the chosen limit is stored locally on that device. The rolling cache evicts tracks that fall behind while online and does not prune while offline playback is active. The Offline screen reports the exact bytes stored by this app and lets you play or delete individual downloads or clear all of them.
+
+Download exports the current complete audio file. A cached track can open the iOS file-share sheet on the first tap. For a streaming track, the first tap prepares the complete file and changes the button to **Save file**; the second tap preserves iOS's required user activation and opens the file-share sheet. Firefox uses a normal browser download.
+
+iOS 15 does not provide Background Sync for this use, so configured upcoming tracks are fetched only while the PWA is open. Cached artwork is also supplied to Media Session, keeping the Now Playing image available without a network connection. Safari may evict website data under storage pressure, and neither a PWA nor IndexedDB can promise that downloads are permanent. The displayed usage is this app's stored audio and artwork, not Safari's total per-origin allocation.
 
 ## Extractable TypeScript SDK
 
-Reusable music-domain code lives in `src/sdk/` and has no DOM, audio element, IndexedDB, service-worker, or UI dependency. `YandexMusicClient` accepts the small `MusicTransport` interface, so a future package can export the types, recommendation session, cache selection policy, and API client while consumers supply their own HTTP transport.
+Reusable music-domain code lives in `src/sdk/` and has no DOM, audio element, IndexedDB, service-worker, or UI dependency. `YandexMusicClient` accepts the small `MusicTransport` interface, so a future package can export the types, recommendation session, cache selection policy, track-link builders, and API client while consumers supply their own HTTP transport.
 
 Browser-specific implementations remain in `src/adapters/`, playback in `src/player/`, and rendering/orchestration in `src/app.ts`. That boundary is intentional: extracting an npm SDK should not require carrying the PWA with it.
 

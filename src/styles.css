@@ -91,59 +91,23 @@ button:focus-visible, input:focus-visible {
 }
 
 .topbar {
-  position: relative;
+  position: sticky;
   z-index: 10;
+  top: env(safe-area-inset-top);
   display: flex;
   width: min(1180px, 100%);
   min-height: 72px;
   margin: 0 auto;
   padding: 12px 24px;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 16px;
-}
-
-.brand {
-  display: inline-flex;
-  padding: 0;
-  align-items: center;
-  gap: 10px;
-  background: transparent;
-  font-size: 18px;
-  font-weight: 760;
-  letter-spacing: -0.02em;
-}
-
-.brand-mark {
-  position: relative;
-  display: grid;
-  width: 38px;
-  height: 38px;
-  overflow: hidden;
-  border-radius: 12px;
-  background: var(--accent);
-  place-items: center;
-}
-
-.brand-mark::before {
-  width: 23px;
-  height: 23px;
-  border-radius: 50%;
-  background: #111114;
-  content: "";
-}
-
-.brand-mark i {
-  position: absolute;
-  width: 16px;
-  height: 7px;
-  transform: rotate(-12deg);
-  border-radius: 100% 10% 100% 10%;
-  background: var(--accent);
+  background: var(--background);
 }
 
 .main-nav {
   display: flex;
+  margin-left: auto;
   padding: 4px;
   border: 1px solid var(--line);
   border-radius: 16px;
@@ -186,6 +150,8 @@ main {
   margin: 0 auto;
   padding: 16px 24px 48px;
 }
+
+[data-view]:focus { outline: none; }
 
 .player-view { min-height: calc(100vh - 136px); }
 
@@ -237,19 +203,11 @@ main {
   background: var(--accent);
 }
 
-.cache-status {
-  min-height: 20px;
-  margin: 18px 0 0;
-  color: var(--muted);
-  font-size: 13px;
-  text-align: center;
-}
-
 .player-copy { width: 100%; max-width: 520px; }
 
 .eyebrow {
   margin: 0 0 12px;
-  color: #aa7900;
+  color: #765400;
   font-size: 12px;
   font-weight: 800;
   letter-spacing: 0.14em;
@@ -293,6 +251,50 @@ main {
 
 .player-status { min-height: 18px; margin: 18px 0; color: var(--muted); font-size: 13px; }
 
+.track-action-row {
+  display: grid;
+  margin: 18px 0 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.track-action-button {
+  min-height: 48px;
+  padding: 0 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface-soft);
+  font-size: 14px;
+  font-weight: 750;
+}
+
+.track-links {
+  display: flex;
+  margin: 0 0 18px;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  gap: 7px;
+}
+
+.track-links a {
+  display: inline-flex;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  align-items: center;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.track-links a:focus-visible {
+  outline: 3px solid #3b82f6;
+  outline-offset: 3px;
+}
+
 .reaction-row { display: flex; margin: 20px 0 26px; gap: 10px; }
 
 .reaction-button {
@@ -312,7 +314,7 @@ main {
 .reaction-button.like.is-active { border-color: transparent; background: var(--accent); color: var(--accent-text); }
 .reaction-button.dislike.is-active { border-color: var(--danger); background: var(--surface); color: var(--danger); }
 
-.timeline input { width: 100%; height: 26px; margin: 0; padding: 0; accent-color: var(--accent); }
+.timeline input { width: 100%; height: 44px; margin: 0; padding: 0; accent-color: var(--accent); }
 
 .timeline > div {
   display: flex;
@@ -417,7 +419,7 @@ main {
 .row-actions { display: flex; gap: 6px; }
 
 .small-button {
-  min-height: 40px;
+  min-height: 44px;
   padding: 0 12px;
   border-radius: 11px;
   background: var(--surface-soft);
@@ -454,18 +456,53 @@ main {
 .empty-library h2 { margin: 20px 0 4px; }
 .empty-library p { max-width: 360px; margin: 6px 20px; color: var(--muted); }
 
-.settings-view { display: grid; place-items: start center; }
+.settings-view { display: block; }
 
 .settings-card {
-  width: min(720px, 100%);
+  width: 100%;
   padding: clamp(26px, 5vw, 56px);
-  border: 1px solid var(--line);
-  border-radius: 32px;
-  background: var(--surface);
-  box-shadow: var(--shadow);
+  border-radius: 0;
+  background: transparent;
 }
 
+.back-button {
+  display: inline-flex;
+  margin: 0 0 20px;
+  padding: 0 12px 0 8px;
+  border-radius: 12px;
+  align-items: center;
+  gap: 5px;
+  background: var(--surface-soft);
+  font-size: 14px;
+  font-weight: 750;
+}
+
+.back-button span { font-size: 26px; line-height: 1; }
+
 .settings-intro { margin: 22px 0 32px; color: var(--muted); font-size: 16px; line-height: 1.55; }
+
+.settings-control {
+  display: grid;
+  margin: 0 0 28px;
+  padding: 20px 0;
+  border-block: 1px solid var(--line);
+  grid-template-columns: minmax(0, 1fr) 96px;
+  align-items: center;
+  gap: 8px 18px;
+}
+
+.settings-control label { font-size: 16px; font-weight: 750; }
+.settings-control input {
+  width: 96px;
+  min-height: 50px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--background);
+  color: var(--text);
+  font-size: 18px;
+}
+.settings-control p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.45; grid-column: 1 / -1; }
 
 .primary-button, .secondary-button, .danger-button {
   min-height: 50px;
@@ -481,6 +518,13 @@ main {
 .settings-actions { display: flex; margin-top: 20px; }
 .settings-message { min-height: 20px; margin: 12px 0 0; color: var(--muted); font-size: 13px; }
 .error-text { color: var(--danger); }
+
+.version-history { margin-top: 34px; padding-top: 26px; border-top: 1px solid var(--line); }
+.version-history h2 { margin: 0 0 14px; font-size: 18px; }
+.commit-list { margin: 0; padding-left: 22px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.commit-list li { margin: 7px 0; overflow-wrap: anywhere; }
+.commit-list a, .current-version a { color: var(--text); font-weight: 750; }
+.current-version { margin: 20px 0 0; color: var(--muted); font-size: 13px; }
 
 .privacy-note { margin-top: 28px; padding: 18px; border-radius: 16px; background: var(--surface-soft); font-size: 13px; }
 .privacy-note p { margin: 5px 0 0; color: var(--muted); line-height: 1.45; }
@@ -528,8 +572,6 @@ main {
 
 @media (max-width: 760px) {
   .topbar { min-height: 62px; padding: 9px 10px; gap: 8px; }
-  .brand > span:last-child { display: none; }
-  .brand-mark { width: 40px; height: 40px; }
 
   .main-nav {
     display: grid;
@@ -537,7 +579,7 @@ main {
     padding: 4px;
     border-radius: 16px;
     flex: 1;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(4, 1fr);
     box-shadow: none;
   }
 
@@ -564,12 +606,12 @@ main {
   }
 
   .artwork-column { width: calc(100% + 36px); margin-inline: -18px; }
-  .cache-status { margin-top: 11px; padding-inline: 18px; font-size: 11px; }
   .player-copy { max-width: 520px; text-align: center; }
   .player-copy h1 { font-size: clamp(34px, 10vw, 52px); }
   .track-details { margin-top: 20px; text-align: left; }
   .track-details dd { font-size: 15px; }
   .player-status { margin: 12px 0; }
+  .track-links { justify-content: center; }
   .reaction-row, .transport-controls { justify-content: center; }
   .reaction-row { margin: 14px 0 18px; }
   .timeline { text-align: left; }
@@ -580,13 +622,14 @@ main {
   .library-view, .settings-view { min-height: auto; padding-top: 34px; }
   .library-view[data-view="liked"] { width: calc(100% + 36px); margin-inline: -18px; }
   .library-view[data-view="liked"] .section-heading { padding-inline: 18px; }
+  .settings-view { width: calc(100% + 36px); margin-inline: -18px; }
   .section-heading { margin-bottom: 24px; align-items: start; }
   .section-heading h1, .settings-card h1 { font-size: 42px; }
   .offline-row { grid-template-columns: 52px minmax(0, 1fr); }
   .row-artwork { width: 52px; height: 52px; }
   .row-actions { grid-column: 1 / -1; }
   .row-actions button { flex: 1; }
-  .settings-card { padding: 26px 20px; border-radius: 24px; }
+  .settings-card { padding: 26px 18px; }
 }
 
 @media (max-width: 390px) {

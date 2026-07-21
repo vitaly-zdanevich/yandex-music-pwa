@@ -23,11 +23,12 @@ use ctr::cipher::{KeyIvInit, StreamCipher, StreamCipherSeek};
 use futures_util::StreamExt;
 use hmac::{Hmac, Mac};
 use lambda_http::http::header::{
-    ACCEPT, ACCEPT_RANGES, ACCESS_CONTROL_ALLOW_HEADERS, ACCESS_CONTROL_ALLOW_METHODS,
-    ACCESS_CONTROL_ALLOW_ORIGIN, ACCESS_CONTROL_EXPOSE_HEADERS, ACCESS_CONTROL_MAX_AGE,
-    AUTHORIZATION, CACHE_CONTROL, CONTENT_ENCODING, CONTENT_LENGTH, CONTENT_RANGE, CONTENT_TYPE,
-    ETAG, HOST, IF_MODIFIED_SINCE, IF_NONE_MATCH, IF_RANGE, LAST_MODIFIED, LOCATION, ORIGIN, RANGE,
-    REFERRER_POLICY, RETRY_AFTER, USER_AGENT, VARY, X_CONTENT_TYPE_OPTIONS,
+    ACCEPT, ACCEPT_ENCODING, ACCEPT_RANGES, ACCESS_CONTROL_ALLOW_HEADERS,
+    ACCESS_CONTROL_ALLOW_METHODS, ACCESS_CONTROL_ALLOW_ORIGIN, ACCESS_CONTROL_EXPOSE_HEADERS,
+    ACCESS_CONTROL_MAX_AGE, AUTHORIZATION, CACHE_CONTROL, CONTENT_ENCODING, CONTENT_LENGTH,
+    CONTENT_RANGE, CONTENT_TYPE, ETAG, HOST, IF_MODIFIED_SINCE, IF_NONE_MATCH, IF_RANGE,
+    LAST_MODIFIED, LOCATION, ORIGIN, RANGE, REFERRER_POLICY, RETRY_AFTER, USER_AGENT, VARY,
+    X_CONTENT_TYPE_OPTIONS,
 };
 use lambda_http::http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode, Uri};
 use lambda_http::{Body as LambdaBody, Request, Response};
@@ -365,10 +366,13 @@ impl App {
             .ok_or_else(|| AppError::new(StatusCode::BAD_REQUEST, "Invalid track id"))?;
         let token = self.required_token().await?;
 
-        let media = match self.resolve_current_file_info(&track_id, &token).await {
+        let mut media = match self.resolve_current_file_info(&track_id, &token).await {
             Ok(media) => media,
             Err(_) => self.resolve_legacy_download_info(&track_id, &token).await?,
         };
+        if media.size.is_none() {
+            media.size = self.probe_media_size(&media.remote_url).await;
+        }
         let direct_url = media
             .decryption_key
             .is_none()
@@ -390,6 +394,7 @@ impl App {
                 direct_url,
                 codec: media.codec,
                 bitrate: media.bitrate,
+                size: media.size,
                 quality: media.quality,
             },
         ))
@@ -584,6 +589,58 @@ impl App {
         unreachable!("the redirect loop always returns")
     }
 
+    /// Read the exact object length from CDN response headers. Some current
+    /// `get-file-info` responses omit the size, while the CDN still exposes it
+    /// without requiring Lambda to transfer the track body.
+    async fn probe_media_size(&self, remote_url: &Url) -> Option<u64> {
+        self.probe_media_size_with_validator(remote_url, is_allowed_media_url)
+            .await
+    }
+
+    async fn probe_media_size_with_validator(
+        &self,
+        remote_url: &Url,
+        is_allowed: fn(&Url) -> bool,
+    ) -> Option<u64> {
+        // `request_media` validates every redirect. Validate the initial URL
+        // here as well so this metadata-only helper cannot become an SSRF
+        // primitive if a future resolver supplies an unchecked URL.
+        if !is_allowed(remote_url) {
+            return None;
+        }
+
+        let mut headers = media_probe_headers();
+        if let Ok(upstream) = self
+            .request_media(
+                Method::HEAD,
+                remote_url.clone(),
+                headers.clone(),
+                is_allowed,
+            )
+            .await
+            && upstream.status().is_success()
+            && let Some(size) = content_length(upstream.headers())
+        {
+            return Some(size);
+        }
+
+        // A few CDN origins do not implement HEAD. A one-byte range request
+        // yields the total in Content-Range; dropping the streaming response
+        // immediately avoids buffering or forwarding the audio body.
+        headers.insert(RANGE, HeaderValue::from_static("bytes=0-0"));
+        let upstream = self
+            .request_media(Method::GET, remote_url.clone(), headers, is_allowed)
+            .await
+            .ok()?;
+        if upstream.status() == StatusCode::PARTIAL_CONTENT {
+            return content_range_total(upstream.headers());
+        }
+        if upstream.status() == StatusCode::OK {
+            return content_length(upstream.headers());
+        }
+        None
+    }
+
     async fn resolve_current_file_info(
         &self,
         track_id: &str,
@@ -648,6 +705,7 @@ impl App {
             remote_url,
             codec,
             bitrate: info.bitrate.unwrap_or_default(),
+            size: info.size,
             quality: info.quality.unwrap_or_else(|| LOSSLESS_QUALITY.to_owned()),
             decryption_key,
         })
@@ -710,6 +768,7 @@ impl App {
             remote_url,
             codec,
             bitrate: selected.bitrate_in_kbps.unwrap_or_default(),
+            size: None,
             quality: "high".to_owned(),
             decryption_key: None,
         })
@@ -974,6 +1033,8 @@ struct ResolvedMediaResponse {
     direct_url: Option<String>,
     codec: String,
     bitrate: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    size: Option<u64>,
     quality: String,
 }
 
@@ -981,6 +1042,7 @@ struct ResolvedMedia {
     remote_url: Url,
     codec: String,
     bitrate: u32,
+    size: Option<u64>,
     quality: String,
     decryption_key: Option<Vec<u8>>,
 }
@@ -1001,6 +1063,8 @@ struct FileInfoResult {
 #[derive(Deserialize)]
 struct FileDownloadInfo {
     bitrate: Option<u32>,
+    #[serde(alias = "fileSize", alias = "file_size")]
+    size: Option<u64>,
     #[serde(default)]
     codec: String,
     quality: Option<String>,
@@ -1288,6 +1352,41 @@ fn validate_token(token: String) -> Result<String, AppError> {
         return Err(AppError::new(StatusCode::BAD_REQUEST, "Invalid token"));
     }
     Ok(token.to_owned())
+}
+
+fn media_probe_headers() -> HeaderMap {
+    let mut headers = HeaderMap::new();
+    headers.insert(USER_AGENT, HeaderValue::from_static(MUSIC_CLIENT));
+    headers.insert(ACCEPT, HeaderValue::from_static("*/*"));
+    // Content-Length must describe the stored audio object, not a compressed
+    // transfer representation selected for this metadata request.
+    headers.insert(ACCEPT_ENCODING, HeaderValue::from_static("identity"));
+    headers
+}
+
+fn content_length(headers: &HeaderMap) -> Option<u64> {
+    headers
+        .get(CONTENT_LENGTH)?
+        .to_str()
+        .ok()?
+        .trim()
+        .parse::<u64>()
+        .ok()
+        .filter(|length| *length > 0)
+}
+
+fn content_range_total(headers: &HeaderMap) -> Option<u64> {
+    let value = headers.get(CONTENT_RANGE)?.to_str().ok()?.trim();
+    let (unit, value) = value.split_once(' ')?;
+    if !unit.eq_ignore_ascii_case("bytes") {
+        return None;
+    }
+    let (_, total) = value.rsplit_once('/')?;
+    total
+        .trim()
+        .parse::<u64>()
+        .ok()
+        .filter(|length| *length > 0)
 }
 
 fn api_headers(token: &str) -> Result<HeaderMap, AppError> {
@@ -1727,6 +1826,7 @@ impl From<&'static str> for AppError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex as StdMutex;
 
     const IPHONE_IOS_15_USER_AGENT: &str = "Mozilla/5.0 (iPhone; CPU iPhone OS 15_7_9 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.6 Mobile/15E148 Safari/604.1";
     const LINUX_FIREFOX_USER_AGENT: &str =
@@ -1926,16 +2026,188 @@ mod tests {
     }
 
     #[test]
-    fn file_info_parser_accepts_snake_and_camel_case_wrappers() {
-        for json in [
-            r#"{"download_info":{"quality":"lossless","codec":"flac","urls":["https://x.yandex.net/a"],"key":"00112233445566778899aabbccddeeff","bitrate":1411}}"#,
-            r#"{"result":{"downloadInfo":{"quality":"lossless","codec":"flac-mp4","urls":["https://x.yandex.net/b"],"bitrate":999}}}"#,
+    fn file_info_parser_accepts_wrappers_and_exact_sizes() {
+        for (json, expected_size) in [
+            (
+                r#"{"download_info":{"quality":"lossless","codec":"flac","urls":["https://x.yandex.net/a"],"key":"00112233445566778899aabbccddeeff","bitrate":1411,"size":5000000000}}"#,
+                Some(5_000_000_000),
+            ),
+            (
+                r#"{"result":{"downloadInfo":{"quality":"lossless","codec":"flac-mp4","urls":["https://x.yandex.net/b"],"bitrate":999,"fileSize":98765432}}}"#,
+                Some(98_765_432),
+            ),
+            (
+                r#"{"result":{"download_info":{"quality":"lossless","codec":"flac","urls":["https://x.yandex.net/c"],"bitrate":1411}}}"#,
+                None,
+            ),
         ] {
             let info = parse_file_info(json.as_bytes()).unwrap();
             assert_eq!(info.quality.as_deref(), Some("lossless"));
             assert_eq!(info.urls.len(), 1);
             assert!(matches!(info.codec.as_str(), "flac" | "flac-mp4"));
+            assert_eq!(info.size, expected_size);
         }
+    }
+
+    #[test]
+    fn resolved_media_response_serializes_optional_exact_size() {
+        let mut media = ResolvedMediaResponse {
+            url: "/api/media/stream?track=1".to_owned(),
+            direct_url: Some("https://x.yandex.net/audio".to_owned()),
+            codec: "flac".to_owned(),
+            bitrate: 1_411,
+            size: Some(5_000_000_000),
+            quality: "lossless".to_owned(),
+        };
+
+        let serialized = serde_json::to_value(&media).unwrap();
+        assert_eq!(serialized["size"].as_u64(), Some(5_000_000_000));
+        assert_eq!(
+            serialized["directUrl"].as_str(),
+            Some("https://x.yandex.net/audio")
+        );
+
+        media.size = None;
+        let serialized = serde_json::to_value(&media).unwrap();
+        assert!(serialized.get("size").is_none());
+    }
+
+    #[test]
+    fn media_size_headers_are_parsed_strictly() {
+        let mut headers = HeaderMap::new();
+        headers.insert(CONTENT_LENGTH, HeaderValue::from_static("987654321"));
+        assert_eq!(content_length(&headers), Some(987_654_321));
+
+        headers.insert(
+            CONTENT_RANGE,
+            HeaderValue::from_static("bytes 0-0/5000000000"),
+        );
+        assert_eq!(content_range_total(&headers), Some(5_000_000_000));
+        headers.insert(CONTENT_RANGE, HeaderValue::from_static("bytes */12345"));
+        assert_eq!(content_range_total(&headers), Some(12_345));
+
+        for value in ["items 0-0/10", "bytes 0-0/*", "bytes 0-0/0", "garbage"] {
+            headers.insert(CONTENT_RANGE, HeaderValue::from_str(value).unwrap());
+            assert_eq!(content_range_total(&headers), None, "{value}");
+        }
+    }
+
+    #[tokio::test]
+    async fn media_size_probe_prefers_head_without_requesting_a_body() {
+        let requests = Arc::new(StdMutex::new(Vec::new()));
+        let recorded = Arc::clone(&requests);
+        let router = Router::new().route(
+            "/media",
+            any(move |request: AxumRequest| {
+                let recorded = Arc::clone(&recorded);
+                async move {
+                    recorded.lock().unwrap().push(request.method().clone());
+                    if request.method() != Method::HEAD {
+                        return Response::builder()
+                            .status(StatusCode::INTERNAL_SERVER_ERROR)
+                            .body(ResponseBody::empty())
+                            .unwrap();
+                    }
+                    assert_eq!(
+                        request.headers().get(ACCEPT_ENCODING),
+                        Some(&HeaderValue::from_static("identity"))
+                    );
+                    Response::builder()
+                        .status(StatusCode::OK)
+                        .header(CONTENT_LENGTH, "987654321")
+                        .body(ResponseBody::empty())
+                        .unwrap()
+                }
+            }),
+        );
+        let (url, server) = serve_probe_router(router).await;
+        let app = test_app(None);
+
+        assert_eq!(
+            app.probe_media_size_with_validator(&url, is_allowed_test_probe_url)
+                .await,
+            Some(987_654_321)
+        );
+        assert_eq!(*requests.lock().unwrap(), vec![Method::HEAD]);
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn media_size_probe_falls_back_to_a_one_byte_range() {
+        let requests = Arc::new(StdMutex::new(Vec::new()));
+        let recorded = Arc::clone(&requests);
+        let router = Router::new().route(
+            "/media",
+            any(move |request: AxumRequest| {
+                let recorded = Arc::clone(&recorded);
+                async move {
+                    recorded.lock().unwrap().push(request.method().clone());
+                    if request.method() == Method::HEAD {
+                        return Response::builder()
+                            .status(StatusCode::METHOD_NOT_ALLOWED)
+                            .body(ResponseBody::empty())
+                            .unwrap();
+                    }
+                    assert_eq!(
+                        request.headers().get(RANGE),
+                        Some(&HeaderValue::from_static("bytes=0-0"))
+                    );
+                    Response::builder()
+                        .status(StatusCode::PARTIAL_CONTENT)
+                        .header(CONTENT_RANGE, "bytes 0-0/5000000000")
+                        .header(CONTENT_LENGTH, "1")
+                        .body(ResponseBody::from(Bytes::from_static(b"x")))
+                        .unwrap()
+                }
+            }),
+        );
+        let (url, server) = serve_probe_router(router).await;
+        let app = test_app(None);
+
+        assert_eq!(
+            app.probe_media_size_with_validator(&url, is_allowed_test_probe_url)
+                .await,
+            Some(5_000_000_000)
+        );
+        assert_eq!(*requests.lock().unwrap(), vec![Method::HEAD, Method::GET]);
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn media_size_probe_rejects_initial_urls_and_redirects_outside_the_allowlist() {
+        let app = test_app(None);
+        let blocked: Url = "http://127.0.0.1:9/blocked".parse().unwrap();
+        assert_eq!(
+            app.probe_media_size_with_validator(&blocked, is_allowed_test_probe_url)
+                .await,
+            None
+        );
+
+        let paths = Arc::new(StdMutex::new(Vec::new()));
+        let recorded = Arc::clone(&paths);
+        let router = Router::new().fallback(any(move |request: AxumRequest| {
+            let recorded = Arc::clone(&recorded);
+            async move {
+                recorded
+                    .lock()
+                    .unwrap()
+                    .push(request.uri().path().to_owned());
+                Response::builder()
+                    .status(StatusCode::TEMPORARY_REDIRECT)
+                    .header(LOCATION, "/blocked")
+                    .body(ResponseBody::empty())
+                    .unwrap()
+            }
+        }));
+        let (url, server) = serve_probe_router(router).await;
+
+        assert_eq!(
+            app.probe_media_size_with_validator(&url, is_allowed_test_probe_url)
+                .await,
+            None
+        );
+        assert_eq!(*paths.lock().unwrap(), vec!["/media", "/media"]);
+        server.abort();
     }
 
     #[test]
@@ -2098,6 +2370,22 @@ mod tests {
             headers,
             body: Bytes::new(),
         }
+    }
+
+    async fn serve_probe_router(router: Router) -> (Url, tokio::task::JoinHandle<()>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, router).await.unwrap();
+        });
+        (
+            Url::parse(&format!("http://{address}/media")).unwrap(),
+            server,
+        )
+    }
+
+    fn is_allowed_test_probe_url(url: &Url) -> bool {
+        url.scheme() == "http" && url.host_str() == Some("127.0.0.1") && url.path() != "/blocked"
     }
 
     fn test_app(allowed_origin: Option<&str>) -> App {

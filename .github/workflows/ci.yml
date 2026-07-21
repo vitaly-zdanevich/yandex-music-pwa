@@ -14,14 +14,32 @@ concurrency:
 jobs:
   web:
     name: Web tests and production build
+    if: github.event_name != 'push' || github.event.deleted != true
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Fetch the previous push tip when history was rewritten
+        if: github.event_name == 'push' && github.event.deleted != true
+        env:
+          VERSION_BASE_SHA: ${{ github.event.before }}
+        run: |
+          if [[ ! "$VERSION_BASE_SHA" =~ ^0+$ ]] && ! git cat-file -e "$VERSION_BASE_SHA^{commit}" 2>/dev/null; then
+            git fetch --no-tags --depth=1 origin "$VERSION_BASE_SHA"
+          fi
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Require a SemVer increment in every commit
+        run: npm run check:version
+        env:
+          VERSION_BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          VERSION_HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          VERSION_EVENT_NAME: ${{ github.event_name }}
+          VERSION_BASE_REF: ${{ github.event_name == 'pull_request' && github.base_ref || github.event.repository.default_branch }}
       - run: npm run test:web
       - name: Build production PWA
         run: npm run build
@@ -30,23 +48,25 @@ jobs:
           VITE_BASE_PATH: /yandex-music-pwa/
       - name: Upload GitHub Pages artifact
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: actions/upload-pages-artifact@v5
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
         with:
           path: dist
 
   rust:
     name: Rust proxy tests and ARM64 check
+    if: github.event_name != 'push' || github.event.deleted != true
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: proxy
     steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
         with:
+          toolchain: 1.94.1
           components: clippy,rustfmt
           targets: aarch64-unknown-linux-gnu
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           workspaces: proxy
       - uses: taiki-e/install-action@a6b2e2dcd845ddd7f509ce4f3ed3d922b80cc5d9 # v2.84.0
@@ -78,13 +98,14 @@ jobs:
 
   terraform:
     name: Terraform validation
+    if: github.event_name != 'push' || github.event.deleted != true
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: infra/terraform
     steps:
-      - uses: actions/checkout@v7
-      - uses: hashicorp/setup-terraform@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4
       - run: terraform fmt -check -recursive
       - run: terraform init -backend=false
       - run: terraform validate
@@ -104,4 +125,4 @@ jobs:
     steps:
       - name: Deploy PWA
         id: deployment
-        uses: actions/deploy-pages@v5
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5
