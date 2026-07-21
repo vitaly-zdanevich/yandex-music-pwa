@@ -435,6 +435,9 @@ describe('App UI integration', () => {
 
 		navButton('settings').click();
 		expect(view('settings').hidden).toBe(false);
+		expect(view('settings').getAttribute('aria-label')).toBe('Preferences');
+		expect(view('settings').querySelector('.eyebrow')).toBeNull();
+		expect(view('settings').querySelector('h1, .settings-intro, .privacy-note')).toBeNull();
 		expect(root.querySelector('.settings-view .back-button')?.textContent).toContain('Back');
 		await settle();
 		expect(root.querySelector('#app-version')?.textContent).toBe(`Version ${__APP_VERSION__}`);

@@ -498,8 +498,6 @@ main {
 
 .back-button span { font-size: 26px; line-height: 1; }
 
-.settings-intro { margin: 22px 0 32px; color: var(--muted); font-size: 16px; line-height: 1.55; }
-
 .settings-control {
   display: grid;
   margin: 0 0 28px;
@@ -544,9 +542,6 @@ main {
 .commit-list li { margin: 7px 0; overflow-wrap: anywhere; }
 .commit-list a, .current-version a { color: var(--text); font-weight: 750; }
 .current-version { margin: 20px 0 0; color: var(--muted); font-size: 13px; }
-
-.privacy-note { margin-top: 28px; padding: 18px; border-radius: 16px; background: var(--surface-soft); font-size: 13px; }
-.privacy-note p { margin: 5px 0 0; color: var(--muted); line-height: 1.45; }
 
 .toast {
   position: fixed;

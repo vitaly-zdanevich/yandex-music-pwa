@@ -1447,18 +1447,14 @@ function template(): string {
 					<div id="offline-list" class="track-list"></div>
 				</section>
 
-				<section class="settings-view" data-view="settings" tabindex="-1" hidden aria-labelledby="settings-title">
+				<section class="settings-view" data-view="settings" tabindex="-1" hidden aria-label="Preferences">
 					<div class="settings-card">
 						<button id="settings-back" type="button" class="back-button"><span aria-hidden="true">‹</span> Back</button>
-						<p class="eyebrow">Preferences</p>
-						<h1 id="settings-title">Connect Yandex Music</h1>
-						<p class="settings-intro">The proxy reads your OAuth token only from server-side configuration. This PWA never accepts, transmits, or stores it.</p>
 						<div class="settings-control">
 							<label for="offline-track-count">Tracks to keep offline</label>
 							<input id="offline-track-count" type="number" min="0" max="50" step="1" inputmode="numeric" />
 							<p id="offline-preference-help"></p>
 						</div>
-						<div class="privacy-note"><strong>AWS deployment</strong><p>Store it in Systems Manager Parameter Store at <code>/&lt;project-name&gt;/yandex-token</code> with <code>scripts/set-token.sh</code>. Remove or rotate it there as well.</p></div>
 						<div class="settings-actions"><button id="refresh-connection" type="button" class="primary-button">Check connection</button></div>
 						<p id="settings-message" class="settings-message" role="status"></p>
 						<section class="version-history" aria-labelledby="commit-history-title">
