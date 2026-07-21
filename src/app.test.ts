@@ -278,6 +278,10 @@ describe('App UI integration', () => {
 		expect(root.querySelector('#track-album')?.textContent).toBe('Album Name');
 		expect(root.querySelector('#player-status')?.textContent).toBe('Lossless · AAC-MP4 · 256 kbps · 7.6 MB');
 		expect(root.querySelector<HTMLImageElement>('#artwork')?.src).toBe(featuredTrack.artworkUrl);
+		const searches = root.querySelector<HTMLDetailsElement>('#track-searches')!;
+		expect(searches.open).toBe(false);
+		searches.querySelector<HTMLElement>('summary')!.click();
+		expect(searches.open).toBe(true);
 
 		const yandex = root.querySelector<HTMLAnchorElement>('#yandex-link')!;
 		const youtube = new URL(root.querySelector<HTMLAnchorElement>('#youtube-link')!.href);

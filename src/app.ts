@@ -1378,20 +1378,23 @@ function template(): string {
 								<button id="download-button" type="button" class="track-action-button">Download</button>
 								<button id="share-button" type="button" class="track-action-button">Share</button>
 							</div>
-							<nav class="track-links" aria-label="Track links">
-								<a id="yandex-link" target="_blank" rel="noopener noreferrer">Yandex</a>
-								<a id="genius-link" target="_blank" rel="noopener noreferrer">Genius</a>
-								<a id="lastfm-link" target="_blank" rel="noopener noreferrer">Last.fm</a>
-								<a id="wikipedia-link" target="_blank" rel="noopener noreferrer">Wikipedia</a>
-								<a id="youtube-link" target="_blank" rel="noopener noreferrer">YouTube</a>
-								<a id="google-link" target="_blank" rel="noopener noreferrer">Google</a>
-								<a id="musicbrainz-track-link" target="_blank" rel="noopener noreferrer">MusicBrainz track</a>
-								<a id="musicbrainz-album-link" target="_blank" rel="noopener noreferrer">MusicBrainz album</a>
-								<a id="musicbrainz-artist-link" target="_blank" rel="noopener noreferrer">MusicBrainz artist</a>
-								<a id="wikidata-track-link" target="_blank" rel="noopener noreferrer">Wikidata track</a>
-								<a id="wikidata-album-link" target="_blank" rel="noopener noreferrer">Wikidata album</a>
-								<a id="wikidata-artist-link" target="_blank" rel="noopener noreferrer">Wikidata artist</a>
-							</nav>
+							<details id="track-searches" class="track-searches">
+								<summary>Search</summary>
+								<nav class="track-links" aria-label="Track links">
+									<a id="yandex-link" target="_blank" rel="noopener noreferrer">Yandex</a>
+									<a id="genius-link" target="_blank" rel="noopener noreferrer">Genius</a>
+									<a id="lastfm-link" target="_blank" rel="noopener noreferrer">Last.fm</a>
+									<a id="wikipedia-link" target="_blank" rel="noopener noreferrer">Wikipedia</a>
+									<a id="youtube-link" target="_blank" rel="noopener noreferrer">YouTube</a>
+									<a id="google-link" target="_blank" rel="noopener noreferrer">Google</a>
+									<a id="musicbrainz-track-link" target="_blank" rel="noopener noreferrer">MusicBrainz track</a>
+									<a id="musicbrainz-album-link" target="_blank" rel="noopener noreferrer">MusicBrainz album</a>
+									<a id="musicbrainz-artist-link" target="_blank" rel="noopener noreferrer">MusicBrainz artist</a>
+									<a id="wikidata-track-link" target="_blank" rel="noopener noreferrer">Wikidata track</a>
+									<a id="wikidata-album-link" target="_blank" rel="noopener noreferrer">Wikidata album</a>
+									<a id="wikidata-artist-link" target="_blank" rel="noopener noreferrer">Wikidata artist</a>
+								</nav>
+							</details>
 							<div class="reaction-row">
 								<button id="dislike-button" type="button" class="reaction-button dislike" aria-label="Dislike this track" aria-pressed="false"><span aria-hidden="true">−</span> Dislike</button>
 								<button id="like-button" type="button" class="reaction-button like" aria-label="Like this track" aria-pressed="false"><span aria-hidden="true">♥</span> Like</button>

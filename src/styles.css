@@ -266,9 +266,30 @@ main {
   font-weight: 750;
 }
 
+.track-searches { margin: 0 0 18px; }
+
+.track-searches summary {
+  display: flex;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  align-items: center;
+  background: var(--surface);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 750;
+  list-style: none;
+}
+
+.track-searches summary::-webkit-details-marker { display: none; }
+.track-searches summary::after { margin-left: auto; content: '+'; font-size: 20px; line-height: 1; }
+.track-searches[open] summary::after { content: '−'; }
+.track-searches summary:focus-visible { outline: 3px solid #3b82f6; outline-offset: 3px; }
+
 .track-links {
   display: flex;
-  margin: 0 0 18px;
+  margin: 8px 0 0;
   flex-wrap: wrap;
   justify-content: flex-start;
   gap: 7px;
