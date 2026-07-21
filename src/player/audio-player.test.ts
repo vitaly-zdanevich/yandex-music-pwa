@@ -9,6 +9,10 @@ class FakeAudio extends EventTarget {
 	currentTime = 0;
 	duration = 180;
 	src = '';
+	currentSrc = '';
+	error: { code: number; message: string } | null = null;
+	networkState = 1;
+	readyState = 0;
 	crossOrigin: string | null = null;
 	readonly load = vi.fn();
 	readonly play = vi.fn(async () => {
@@ -488,6 +492,9 @@ describe('AudioPlayer', () => {
 		const audio = instances[0]!;
 		player.load(track, 'https://lambda.example/api/media/stream?track=1', false, undefined, true);
 		await player.play();
+		audio.error = { code: 2, message: 'The network connection was lost.' };
+		audio.networkState = 3;
+		audio.readyState = 1;
 
 		for (const delay of [500, 1_500, 3_000]) {
 			audio.dispatchEvent(new Event('error'));
@@ -497,7 +504,15 @@ describe('AudioPlayer', () => {
 		audio.dispatchEvent(new Event('error'));
 
 		expect(onError).toHaveBeenCalledOnce();
-		expect(onError).toHaveBeenCalledWith('This track could not be played.');
+		expect(onError).toHaveBeenCalledWith(expect.objectContaining({
+			name: 'PlaybackError',
+			message: 'This track could not be played.',
+			mediaErrorCode: 2,
+			mediaErrorMessage: 'The network connection was lost.',
+			networkState: 3,
+			readyState: 1,
+			source: 'https://lambda.example/api/media/stream?track=1',
+		}));
 		expect(audio.load).toHaveBeenCalledTimes(4);
 
 		await player.play();
@@ -566,7 +581,11 @@ describe('AudioPlayer', () => {
 
 		audio.dispatchEvent(new Event('error'));
 
-		await vi.waitFor(() => expect(onError).toHaveBeenCalledWith('This track could not be played.'));
+		await vi.waitFor(() => expect(onError).toHaveBeenCalledWith(expect.objectContaining({
+			name: 'PlaybackError',
+			message: 'This track could not be played.',
+			source: 'https://cdn.yandex.net/track.flac',
+		})));
 		expect(onPlayState).toHaveBeenLastCalledWith(false);
 	});
 });

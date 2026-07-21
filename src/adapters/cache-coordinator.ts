@@ -7,7 +7,7 @@ export interface CacheProgress {
 	pending: number;
 	current?: Track;
 	completed?: Track;
-	error?: string;
+	error?: unknown;
 }
 
 export class CacheCoordinator {
@@ -69,10 +69,11 @@ export class CacheCoordinator {
 					const message =
 						error instanceof DOMException && error.name === 'QuotaExceededError'
 							? 'Storage is full. Remove some offline tracks and try again.'
-							: error instanceof Error
-								? error.message
-								: 'A track could not be cached.';
-					this.onProgress({ pending: this.pending.size, error: message });
+							: `Could not cache ${track.title} (${track.id}).`;
+					const cacheError = new Error(message);
+					cacheError.name = 'OfflineCacheError';
+					Object.defineProperty(cacheError, 'cause', { value: error });
+					this.onProgress({ pending: this.pending.size, error: cacheError });
 				}
 			}
 		} finally {

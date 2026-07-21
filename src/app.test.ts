@@ -504,6 +504,94 @@ describe('App UI integration', () => {
 		expect(replace).toHaveBeenCalled();
 	});
 
+	it('shows complete network errors until the popup is explicitly closed', async () => {
+		const cause = new TypeError('Load failed at the network boundary');
+		cause.stack = 'TypeError: Load failed at the network boundary\n\tat fetch (network.ts:9:4)';
+		const failure = new Error('Could not reach Yandex Music');
+		failure.stack = 'MusicApiError: Could not reach Yandex Music\n\tat setLiked (client.ts:12:3)';
+		Object.assign(failure, { status: 502 });
+		Object.defineProperty(failure, 'cause', { value: cause });
+		vi.mocked(YandexMusicClient.prototype.setLiked).mockRejectedValueOnce(failure);
+		const app = new App(root);
+		await app.init();
+		await settle();
+		const like = root.querySelector<HTMLButtonElement>('#like-button')!;
+		like.focus();
+
+		like.click();
+		await settle();
+
+		const popup = root.querySelector<HTMLElement>('#error-popup')!;
+		const message = root.querySelector<HTMLElement>('#error-popup-message')!;
+		const close = root.querySelector<HTMLButtonElement>('#error-popup-close')!;
+		expect(popup.hidden).toBe(false);
+		expect(message.textContent).toContain(failure.stack);
+		expect(message.textContent).toContain('status: 502');
+		expect(message.textContent).toContain('TypeError: Load failed at the network boundary');
+		expect(message.textContent).toContain('at fetch (network.ts:9:4)');
+		expect(document.activeElement).toBe(close);
+
+		vi.useFakeTimers();
+		await vi.advanceTimersByTimeAsync(10_000);
+		expect(popup.hidden).toBe(false);
+		close.click();
+		expect(popup.hidden).toBe(true);
+		expect(document.activeElement).toBe(like);
+		vi.useRealTimers();
+	});
+
+	it('queues uncaught JavaScript errors and unhandled rejections without interpreting their text as markup', async () => {
+		const app = new App(root);
+		await app.init();
+		await settle();
+		const javascriptError = new Error('<img src=x onerror=alert(1)> JavaScript failed');
+		javascriptError.stack = 'Error: <img src=x onerror=alert(1)> JavaScript failed\n\tat render (app.ts:5:2)';
+
+		window.dispatchEvent(new ErrorEvent('error', { error: javascriptError, message: javascriptError.message }));
+		const rejection = new Event('unhandledrejection');
+		Object.defineProperty(rejection, 'reason', { value: new Error('Promise failed in full') });
+		window.dispatchEvent(rejection);
+
+		const popup = root.querySelector<HTMLElement>('#error-popup')!;
+		const message = root.querySelector<HTMLElement>('#error-popup-message')!;
+		const close = root.querySelector<HTMLButtonElement>('#error-popup-close')!;
+		expect(popup.hidden).toBe(false);
+		expect(message.textContent).toContain(javascriptError.stack);
+		expect(message.querySelector('img')).toBeNull();
+		expect(close.textContent).toBe('Next error');
+
+		message.scrollTop = 120;
+		close.click();
+		expect(message.textContent).toContain('Promise failed in full');
+		expect(message.scrollTop).toBe(0);
+		expect(close.textContent).toBe('Close');
+		message.focus();
+		message.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Tab' }));
+		expect(document.activeElement).toBe(close);
+		close.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Tab', shiftKey: true }));
+		expect(document.activeElement).toBe(message);
+		close.click();
+		expect(popup.hidden).toBe(true);
+	});
+
+	it('routes global errors only to the latest initialized app', async () => {
+		const firstRoot = root;
+		const firstApp = new App(firstRoot);
+		await firstApp.init();
+		await settle();
+		const latestRoot = document.createElement('div');
+		document.body.append(latestRoot);
+		const latestApp = new App(latestRoot);
+		await latestApp.init();
+		await settle();
+
+		window.dispatchEvent(new ErrorEvent('error', { error: new Error('Latest app only') }));
+
+		expect(firstRoot.querySelector<HTMLElement>('#error-popup')?.hidden).toBe(true);
+		expect(latestRoot.querySelector<HTMLElement>('#error-popup')?.hidden).toBe(false);
+		expect(latestRoot.querySelector('#error-popup-message')?.textContent).toContain('Latest app only');
+	});
+
 	it('frees the background cache slot while a failed proxy stream recovers', async () => {
 		const now = vi.spyOn(Date, 'now').mockReturnValue(0);
 		const app = new App(root);
@@ -654,7 +742,7 @@ describe('App UI integration', () => {
 
 		expect(root.querySelector('#track-title')?.textContent).toBe('Track / One');
 		expect(root.querySelector('#play-button')?.getAttribute('aria-label')).toBe('Pause');
-		expect(root.querySelector('#toast')?.textContent).toBe('Queue unavailable');
+		expect(root.querySelector('#error-popup-message')?.textContent).toContain('Queue unavailable');
 	});
 
 	it('uses a newly cached next track instead of a prepared remote URL after going offline', async () => {
@@ -721,7 +809,7 @@ describe('App UI integration', () => {
 			}),
 		});
 		root.querySelector<HTMLButtonElement>('#share-button')!.click();
-		expect(root.querySelector('#toast')?.textContent).toBe('The Yandex Music link could not be shared.');
+		expect(root.querySelector('#error-popup-message')?.textContent).toContain('Share unavailable');
 	});
 
 	it('downloads the complete direct media file and exposes it as Save file afterwards', async () => {

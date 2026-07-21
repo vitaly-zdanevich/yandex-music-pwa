@@ -5,6 +5,7 @@ import { ProxyMediaResolver, type MediaSource } from './adapters/media-resolver'
 import { IndexedDbOfflineStore, type CachedTrack, type CachedTrackMetadata } from './adapters/offline-store';
 import { SettingsClient } from './adapters/settings-client';
 import { artistNames, formatBytes, formatMediaQuality, formatTime } from './lib/format';
+import { formatErrorText } from './lib/error-text';
 import { loadGithubHistory } from './lib/github-history';
 import {
 	loadOfflineTrackCount,
@@ -41,6 +42,9 @@ type PreparedPlayback =
 	| { kind: 'remote'; trackId: string; source: MediaSource };
 
 const LIBRARY_PAGE_SIZE = 100;
+let activeGlobalErrorReporter: ((error: unknown) => void) | undefined;
+let globalErrorHandlersInstalled = false;
+let reportingGlobalError = false;
 
 export class App {
 	private readonly transport = new HttpMusicTransport();
@@ -52,7 +56,7 @@ export class App {
 	private readonly cache = new CacheCoordinator(this.offlineStore, this.media, (progress) => this.onCacheProgress(progress));
 	private readonly audio = new AudioPlayer({
 		onEnded: () => void this.onEnded(),
-		onError: (message) => this.showToast(message, 'error'),
+		onError: (message) => this.showError(message),
 		onMediaReady: () => this.syncMediaSession(),
 		onPlayState: (playing) => this.onPlayState(playing),
 		onRecoveryState: (recovering) => this.onPlaybackRecoveryState(recovering),
@@ -95,11 +99,15 @@ export class App {
 	private cacheRefreshVersion = 0;
 	private cacheRefreshTail: Promise<void> = Promise.resolve();
 	private cacheSuspendedForPlaybackRecovery = false;
+	private readonly errorQueue: string[] = [];
+	private activeErrorText?: string;
+	private errorPopupPreviousFocus?: HTMLElement;
 
 	constructor(private readonly root: HTMLElement) {}
 
 	async init(): Promise<void> {
 		this.root.innerHTML = template();
+		installGlobalErrorHandlers((error) => this.showError(error));
 		this.element<HTMLElement>('app-version').textContent = `Version ${__APP_VERSION__}`;
 		this.renderOfflinePreference();
 		this.audio.mount(this.root);
@@ -107,11 +115,13 @@ export class App {
 		await this.refreshOfflineSummary();
 		this.renderPlayer();
 		let configured = false;
-		let statusError: string | undefined;
+		let statusError: unknown;
+		let statusFailed = false;
 		try {
 			configured = await this.settings.status();
 		} catch (error) {
-			statusError = toMessage(error);
+			statusError = error;
+			statusFailed = true;
 		}
 		if (configured) {
 			try {
@@ -125,11 +135,14 @@ export class App {
 			} else {
 				this.showScreen('settings');
 				this.setSettingsMessage(
-					statusError ?? 'No server-side Yandex Music token was found. For AWS, add it from your deployment terminal, then check again.',
+					statusFailed
+						? toMessage(statusError)
+						: 'No server-side Yandex Music token was found. For AWS, add it from your deployment terminal, then check again.',
 					true,
 				);
 			}
 		}
+		if (statusFailed) this.showError(statusError);
 	}
 
 	private bindEvents(): void {
@@ -169,6 +182,11 @@ export class App {
 		});
 		this.element<HTMLButtonElement>('remove-all').addEventListener('click', () => void this.removeAllOffline());
 		this.element<HTMLButtonElement>('liked-more').addEventListener('click', () => void this.loadNextLikedPage());
+		this.element<HTMLButtonElement>('error-popup-close').addEventListener('click', () => this.closeErrorPopup());
+		this.element<HTMLElement>('error-popup').addEventListener('keydown', (event) => {
+			if (event.key === 'Escape') this.closeErrorPopup();
+			else if (event.key === 'Tab') this.trapErrorPopupFocus(event);
+		});
 		window.addEventListener('online', () => {
 			if (this.connected && !this.offlinePlayback) void this.ensureQueueAndCache();
 		});
@@ -239,7 +257,7 @@ export class App {
 			void this.prepareNextPlayback();
 		} catch (error) {
 			if (this.canApplyCacheRefresh(refreshVersion, navigationVersion, cacheAheadCount)) {
-				this.showToast(toMessage(error), 'error');
+				this.showError(error);
 			}
 		}
 	}
@@ -381,6 +399,7 @@ export class App {
 			void this.prepareNextPlayback();
 		} catch (error) {
 			this.setPlayerStatus(toMessage(error));
+			this.showError(error);
 		}
 	}
 
@@ -480,7 +499,7 @@ export class App {
 		if (this.audio.trackId !== track.id) await this.prepareCurrent();
 		if (this.audio.trackId !== track.id) {
 			this.audio.stop();
-			this.showToast('The track is not ready yet. Check your connection.', 'error');
+			this.showError('The track is not ready yet. Check your connection.');
 			return;
 		}
 		if (this.audio.playing) {
@@ -514,14 +533,14 @@ export class App {
 			} catch (error) {
 				if (navigation === this.navigationVersion) {
 					this.resumeAfterNavigation = false;
-					this.showToast(toMessage(error), 'error');
+					this.showError(error);
 				}
 				return;
 			}
 			if (navigation !== this.navigationVersion) return;
 			if (this.recommendations.index + 1 >= this.recommendations.length) {
 				this.resumeAfterNavigation = false;
-				this.showToast('No more recommendations are available right now.', 'error');
+				this.showError('No more recommendations are available right now.');
 				return;
 			}
 		}
@@ -637,7 +656,7 @@ export class App {
 		} catch (error) {
 			Object.assign(track, previous);
 			this.renderPlayer();
-			this.showToast(toMessage(error), 'error');
+			this.showError(error);
 		} finally {
 			const ownsReaction = this.reactionTrackId === track.id;
 			if (ownsReaction) this.reactionTrackId = undefined;
@@ -667,7 +686,7 @@ export class App {
 		} catch (error) {
 			Object.assign(track, previous);
 			this.renderPlayer();
-			this.showToast(toMessage(error), 'error');
+			this.showError(error);
 		} finally {
 			const ownsReaction = this.reactionTrackId === track.id;
 			if (ownsReaction) this.reactionTrackId = undefined;
@@ -730,6 +749,7 @@ export class App {
 			if (version === this.likedLoadVersion) {
 				this.likedPages = undefined;
 				this.element<HTMLElement>('liked-message').textContent = toMessage(error);
+				this.showError(error);
 			}
 		} finally {
 			if (version === this.likedLoadVersion) {
@@ -859,7 +879,7 @@ export class App {
 		if (this.audio.trackId === this.currentTrack?.id) await this.audio.play();
 		else {
 			this.audio.stop();
-			this.showToast('The download could not be opened.', 'error');
+			this.showError('The download could not be opened.');
 		}
 	}
 
@@ -938,7 +958,7 @@ export class App {
 	}
 
 	private onCacheProgress(progress: CacheProgress): void {
-		if (progress.error) this.showToast(progress.error, 'error');
+		if ('error' in progress) this.showError(progress.error);
 		if (progress.completed) {
 			void this.refreshOfflineSummary();
 			if (this.preparedNext?.kind === 'remote' && this.nextTrack?.id === progress.completed.id) {
@@ -974,7 +994,7 @@ export class App {
 		} catch (error) {
 			if (wasConnected) this.setSettingsMessage(toMessage(error), true);
 			else this.handleConnectionError(error);
-			this.showToast(toMessage(error), 'error');
+			if (wasConnected) this.showError(error);
 		} finally {
 			this.setSettingsBusy(false);
 		}
@@ -1004,10 +1024,11 @@ export class App {
 		this.setSettingsMessage(message, true);
 		this.showScreen(navigator.onLine ? 'settings' : 'offline');
 		if (!navigator.onLine) void this.renderOfflineList();
+		this.showError(error);
 	}
 
 	private requireConnection(): void {
-		this.showToast('Configure the token in AWS, then check the connection in Preferences.', 'error');
+		this.showError('Configure the token in AWS, then check the connection in Preferences.');
 		this.showScreen('settings');
 	}
 
@@ -1052,11 +1073,12 @@ export class App {
 				list.append(item);
 			}
 			container.replaceChildren(list);
-		} catch {
+		} catch (error) {
 			const message = document.createElement('p');
 			message.className = 'settings-message';
 			message.textContent = 'Could not load commits.';
 			container.replaceChildren(message);
+			this.showError(error);
 		}
 	}
 
@@ -1075,12 +1097,65 @@ export class App {
 		this.element<HTMLButtonElement>('refresh-connection').disabled = busy;
 	}
 
-	private showToast(message: string, kind: 'normal' | 'error' = 'normal'): void {
+	private showToast(message: string): void {
 		const toast = this.element<HTMLElement>('toast');
 		toast.textContent = message;
-		toast.classList.toggle('is-error', kind === 'error');
 		toast.classList.add('is-visible');
 		window.setTimeout(() => toast.classList.remove('is-visible'), 3_500);
+	}
+
+	private showError(error: unknown): void {
+		const text = formatErrorText(error);
+		const popup = this.element<HTMLElement>('error-popup');
+		if (!popup.hidden) {
+			const lastQueued = this.errorQueue[this.errorQueue.length - 1];
+			if (text !== this.activeErrorText && text !== lastQueued) this.errorQueue.push(text);
+			this.renderErrorCloseLabel();
+			return;
+		}
+		this.activeErrorText = text;
+		const message = this.element<HTMLElement>('error-popup-message');
+		message.textContent = text;
+		message.scrollTop = 0;
+		const activeElement = document.activeElement;
+		this.errorPopupPreviousFocus = activeElement instanceof HTMLElement ? activeElement : undefined;
+		popup.hidden = false;
+		this.renderErrorCloseLabel();
+		this.element<HTMLButtonElement>('error-popup-close').focus({ preventScroll: true });
+	}
+
+	private closeErrorPopup(): void {
+		const next = this.errorQueue.shift();
+		if (next !== undefined) {
+			this.activeErrorText = next;
+			const message = this.element<HTMLElement>('error-popup-message');
+			message.textContent = next;
+			message.scrollTop = 0;
+			this.renderErrorCloseLabel();
+			return;
+		}
+		this.activeErrorText = undefined;
+		this.element<HTMLElement>('error-popup').hidden = true;
+		this.renderErrorCloseLabel();
+		const previousFocus = this.errorPopupPreviousFocus;
+		this.errorPopupPreviousFocus = undefined;
+		if (previousFocus?.isConnected) previousFocus.focus({ preventScroll: true });
+	}
+
+	private renderErrorCloseLabel(): void {
+		this.element<HTMLButtonElement>('error-popup-close').textContent = this.errorQueue.length ? 'Next error' : 'Close';
+	}
+
+	private trapErrorPopupFocus(event: KeyboardEvent): void {
+		const close = this.element<HTMLButtonElement>('error-popup-close');
+		const message = this.element<HTMLElement>('error-popup-message');
+		if (event.shiftKey && document.activeElement === close) {
+			event.preventDefault();
+			message.focus({ preventScroll: true });
+		} else if (!event.shiftKey && document.activeElement === message) {
+			event.preventDefault();
+			close.focus({ preventScroll: true });
+		}
 	}
 
 	private installMediaSessionHandlers(): void {
@@ -1177,11 +1252,11 @@ export class App {
 			try {
 				void navigator.share({ title, text: title, url }).catch((error: unknown) => {
 					if (!(error instanceof DOMException && error.name === 'AbortError')) {
-						this.showToast('The Yandex Music link could not be shared.', 'error');
+						this.showError(error);
 					}
 				});
-			} catch {
-				this.showToast('The Yandex Music link could not be shared.', 'error');
+			} catch (error) {
+				this.showError(error);
 			}
 			return;
 		}
@@ -1236,7 +1311,7 @@ export class App {
 			}
 		} catch (error) {
 			if (version === this.downloadVersion && !(error instanceof DOMException && error.name === 'AbortError')) {
-				this.showToast(toMessage(error), 'error');
+				this.showError(error);
 			}
 		} finally {
 			if (this.downloadController === controller) this.downloadController = undefined;
@@ -1250,11 +1325,11 @@ export class App {
 			try {
 				void navigator.share({ files: [file], title: `${track.title} — ${artistNames(track)}` }).catch((error: unknown) => {
 					if (!(error instanceof DOMException && error.name === 'AbortError')) {
-						this.showToast('The audio file could not be saved.', 'error');
+						this.showError(error);
 					}
 				});
-			} catch {
-				this.showToast('The audio file could not be saved.', 'error');
+			} catch (error) {
+				this.showError(error);
 			}
 			return;
 		}
@@ -1290,6 +1365,31 @@ export class App {
 		const element = this.root.querySelector<T>(`#${id}`);
 		if (!element) throw new Error(`Missing UI element: ${id}`);
 		return element;
+	}
+}
+
+function installGlobalErrorHandlers(reporter: (error: unknown) => void): void {
+	activeGlobalErrorReporter = reporter;
+	if (globalErrorHandlersInstalled) return;
+	globalErrorHandlersInstalled = true;
+	window.addEventListener('error', (event) => {
+		const location = event.filename
+			? `\nSource: ${event.filename}:${event.lineno || 0}:${event.colno || 0}`
+			: '';
+		reportGlobalError(event.error ?? `${event.message || 'Unknown JavaScript error.'}${location}`);
+	});
+	window.addEventListener('unhandledrejection', (event) => {
+		reportGlobalError(event.reason ?? 'Unhandled promise rejection.');
+	});
+}
+
+function reportGlobalError(error: unknown): void {
+	if (!activeGlobalErrorReporter || reportingGlobalError) return;
+	reportingGlobalError = true;
+	try {
+		activeGlobalErrorReporter(error);
+	} finally {
+		reportingGlobalError = false;
 	}
 }
 
@@ -1465,6 +1565,15 @@ function template(): string {
 					</div>
 				</section>
 			</main>
+			<div id="error-popup" class="error-popup" hidden>
+				<section class="error-popup-card" role="alertdialog" aria-modal="true" aria-labelledby="error-popup-title" aria-describedby="error-popup-message">
+					<header>
+						<h2 id="error-popup-title">Error</h2>
+						<button id="error-popup-close" type="button">Close</button>
+					</header>
+					<pre id="error-popup-message" tabindex="0"></pre>
+				</section>
+			</div>
 			<div id="toast" class="toast" role="status" aria-live="polite"></div>
 		</div>`;
 }

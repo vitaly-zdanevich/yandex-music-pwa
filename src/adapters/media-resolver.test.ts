@@ -54,4 +54,19 @@ describe('ProxyMediaResolver', () => {
 			status: 404,
 		});
 	});
+
+	it('retains the parser failure from an unreadable proxy response', async () => {
+		vi.stubGlobal('window', { location: { origin: 'https://app.example' } });
+		vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+			new Response('<html>failed</html>', { status: 502 }),
+		));
+
+		const error = await new ProxyMediaResolver().resolve('broken').catch((failure: unknown) => failure);
+
+		expect(error).toMatchObject({
+			message: 'The media proxy returned an unreadable response.',
+			status: 502,
+		});
+		expect((error as MusicApiError).cause).toBeInstanceOf(SyntaxError);
+	});
 });

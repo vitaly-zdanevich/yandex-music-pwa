@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { MusicApiError } from '../sdk';
 import { HttpMusicTransport } from './http-transport';
 
 describe('HttpMusicTransport', () => {
@@ -74,6 +75,49 @@ describe('HttpMusicTransport', () => {
 			}),
 		).rejects.toThrow('Could not reach Yandex Music');
 		expect(fetchMock).toHaveBeenCalledOnce();
+	});
+
+	it('retains the final fetch rejection as the network error cause', async () => {
+		vi.useFakeTimers();
+		vi.stubGlobal('window', { location: { origin: 'https://app.example' }, setTimeout });
+		const failures = [
+			new TypeError('first network failure'),
+			new TypeError('second network failure'),
+			new TypeError('third network failure'),
+			new TypeError('fourth network failure'),
+			new TypeError('final network failure'),
+		];
+		const fetchMock = vi.fn();
+		for (const failure of failures) fetchMock.mockRejectedValueOnce(failure);
+		vi.stubGlobal('fetch', fetchMock);
+
+		const result = new HttpMusicTransport()
+			.request({ path: '/account/status', retry: 'transient' })
+			.catch((error: unknown) => error);
+		await vi.runAllTimersAsync();
+
+		const error = await result;
+		expect(error).toBeInstanceOf(MusicApiError);
+		expect((error as MusicApiError).cause).toBe(failures.at(-1));
+		expect((error as MusicApiError).status).toBeUndefined();
+		expect(fetchMock).toHaveBeenCalledTimes(5);
+	});
+
+	it('retains the JSON failure from an unreadable response', async () => {
+		vi.stubGlobal('window', { location: { origin: 'https://app.example' } });
+		vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+			new Response('not json', { status: 502, headers: { 'Content-Type': 'application/json' } }),
+		));
+
+		const error = await new HttpMusicTransport()
+			.request({ path: '/account/status' })
+			.catch((failure: unknown) => failure);
+
+		expect(error).toMatchObject({
+			message: 'Yandex Music returned an unreadable response.',
+			status: 502,
+		});
+		expect((error as MusicApiError).cause).toBeInstanceOf(SyntaxError);
 	});
 
 	it('does not retry authentication failures', async () => {

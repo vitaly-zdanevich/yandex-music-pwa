@@ -34,12 +34,17 @@ export class HttpMusicTransport implements MusicTransport {
 		for (let attempt = 0; attempt <= (request.retry === 'transient' ? RETRY_DELAYS_MS.length : 0); attempt += 1) {
 			try {
 				response = await fetch(url, { method: request.method ?? 'GET', headers, body, cache: 'no-store' });
-			} catch {
+			} catch (error) {
 				if (request.retry === 'transient' && attempt < RETRY_DELAYS_MS.length) {
 					await wait(RETRY_DELAYS_MS[attempt]!);
 					continue;
 				}
-				throw new MusicApiError('Could not reach Yandex Music. Check your connection or try again in a moment.');
+				throw new MusicApiError(
+					'Could not reach Yandex Music. Check your connection or try again in a moment.',
+					undefined,
+					undefined,
+					error,
+				);
 			}
 			if (request.retry !== 'transient' || !TRANSIENT_STATUSES.has(response.status) || attempt === RETRY_DELAYS_MS.length) {
 				break;
@@ -51,8 +56,8 @@ export class HttpMusicTransport implements MusicTransport {
 		let payload: ApiEnvelope<T>;
 		try {
 			payload = (await response.json()) as ApiEnvelope<T>;
-		} catch {
-			throw new MusicApiError('Yandex Music returned an unreadable response.', response.status);
+		} catch (error) {
+			throw new MusicApiError('Yandex Music returned an unreadable response.', response.status, undefined, error);
 		}
 		if (!response.ok || payload.result === undefined) {
 			const apiMessage = typeof payload.error === 'string' ? payload.error : payload.error?.message;

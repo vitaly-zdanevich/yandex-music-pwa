@@ -2,7 +2,7 @@ import type { Track } from '../sdk';
 
 export interface PlayerEvents {
 	onEnded: () => void;
-	onError: (message: string) => void;
+	onError: (error: unknown) => void;
 	onMediaReady?: () => void;
 	onPlayState: (playing: boolean) => void;
 	onRecoveryState?: (recovering: boolean) => void;
@@ -164,7 +164,7 @@ export class AudioPlayer {
 	async play(): Promise<void> {
 		if (!this.loadedTrackId) {
 			this.stop();
-			this.events.onError('The track is not ready yet.');
+			this.events.onError(this.createPlaybackError('The track is not ready yet.'));
 			return;
 		}
 		this.cancelAbortRetry();
@@ -204,7 +204,7 @@ export class AudioPlayer {
 			const message = error instanceof DOMException && error.name === 'NotAllowedError'
 				? 'Tap play again to allow audio on this device.'
 				: 'Playback could not start.';
-			this.reportTerminalError(message);
+			this.reportTerminalError(message, error);
 		}
 	}
 
@@ -475,14 +475,31 @@ export class AudioPlayer {
 		this.pendingPositionRestore = undefined;
 	}
 
-	private reportTerminalError(message: string): void {
+	private reportTerminalError(message: string, cause?: unknown): void {
 		this.wantsPlayback = false;
 		this.cancelPlaybackWatchdogs();
 		this.setRecoveryState(false);
 		this.reportPlayState(false);
 		if (this.terminalMediaError) return;
 		this.terminalMediaError = true;
-		this.events.onError(message);
+		this.events.onError(this.createPlaybackError(message, cause));
+	}
+
+	private createPlaybackError(message: string, cause?: unknown): Error {
+		const error = new Error(message);
+		error.name = 'PlaybackError';
+		const source = this.audio.currentSrc || this.audio.src;
+		Object.assign(error, {
+			currentTime: this.currentPlaybackTime(),
+			networkState: this.audio.networkState,
+			readyState: this.audio.readyState,
+			...(this.audio.error
+				? { mediaErrorCode: this.audio.error.code, mediaErrorMessage: this.audio.error.message }
+				: {}),
+			...(source ? { source } : {}),
+		});
+		if (cause !== undefined) Object.defineProperty(error, 'cause', { value: cause });
+		return error;
 	}
 
 	private setRecoveryState(recovering: boolean): void {

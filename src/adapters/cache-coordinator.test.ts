@@ -74,15 +74,20 @@ describe('CacheCoordinator', () => {
 
 	it('clears the active-track progress state after a terminal download error', async () => {
 		const store = storeStub();
+		const failure = new Error('No playable source');
 		const media: MediaResolver = {
-			resolve: vi.fn().mockRejectedValue(new Error('No playable source')),
+			resolve: vi.fn().mockRejectedValue(failure),
 			proxyArtwork: vi.fn(),
 		};
 		const progress: CacheProgress[] = [];
 		new CacheCoordinator(store, media, (value) => progress.push(value)).enqueue([track]);
 
 		await vi.waitFor(() => expect(progress.some((value) => value.error)).toBe(true));
-		expect(progress.at(-1)).toEqual({ pending: 0, error: 'No playable source' });
+		const error = progress.at(-1)?.error;
+		expect(error).toBeInstanceOf(Error);
+		expect((error as Error).message).toBe('Could not cache Highest quality (track-1).');
+		expect((error as Error & { cause?: unknown }).cause).toBe(failure);
+		expect(progress.at(-1)?.pending).toBe(0);
 		expect(progress.at(-1)?.current).toBeUndefined();
 	});
 });

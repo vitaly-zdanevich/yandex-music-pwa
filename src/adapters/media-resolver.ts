@@ -21,7 +21,12 @@ export class ProxyMediaResolver implements MediaResolver {
 		const response = await fetch(apiUrl(`/api/media/resolve/${encodeURIComponent(trackId)}`), {
 			cache: 'no-store',
 		});
-		const payload = (await response.json().catch(() => ({}))) as Partial<MediaSource> & { error?: string };
+		let payload: Partial<MediaSource> & { error?: string };
+		try {
+			payload = (await response.json()) as Partial<MediaSource> & { error?: string };
+		} catch (error) {
+			throw new MusicApiError('The media proxy returned an unreadable response.', response.status, undefined, error);
+		}
 		if (!response.ok || !payload.url) {
 			throw new MusicApiError(payload.error ?? 'This track is not available for playback.', response.status);
 		}

@@ -540,6 +540,57 @@ main {
 .commit-list a, .current-version a { color: var(--text); font-weight: 750; }
 .current-version { margin: 20px 0 0; color: var(--muted); font-size: 13px; }
 
+.error-popup {
+  position: fixed;
+  z-index: 1000;
+  display: grid;
+  inset: 0;
+  padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  background: rgba(0, 0, 0, 0.76);
+  place-items: center;
+}
+
+.error-popup-card {
+  display: flex;
+  width: min(760px, 100%);
+  max-height: 100%;
+  flex-direction: column;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.error-popup-card header {
+  display: flex;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--line);
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.error-popup-card h2 { margin: 0; font-size: 20px; }
+
+.error-popup-card button {
+  padding: 0 16px;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-weight: 750;
+}
+
+.error-popup-card pre {
+  margin: 0;
+  padding: 18px 16px;
+  overflow: auto;
+  color: var(--text);
+  font: 12px/1.55 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  overflow-wrap: anywhere;
+  tab-size: 2;
+  white-space: pre-wrap;
+  word-break: break-word;
+  -webkit-overflow-scrolling: touch;
+  user-select: text;
+}
+
 .toast {
   position: fixed;
   z-index: 100;
@@ -560,7 +611,6 @@ main {
 }
 
 .toast.is-visible { transform: translateY(0); opacity: 1; }
-.toast.is-error { background: #7e1720; }
 
 @media (prefers-color-scheme: dark) {
   :root {
