@@ -102,17 +102,15 @@ button:focus-visible, input:focus-visible {
   align-items: center;
   justify-content: flex-end;
   gap: 16px;
-  background: var(--background);
+  background: transparent;
 }
 
 .main-nav {
   display: flex;
   margin-left: auto;
-  padding: 4px;
-  border: 1px solid var(--line);
-  border-radius: 16px;
-  gap: 2px;
-  background: rgba(255, 255, 255, 0.88);
+  padding: 0;
+  gap: 6px;
+  background: transparent;
 }
 
 .main-nav button {
@@ -123,7 +121,7 @@ button:focus-visible, input:focus-visible {
   border-radius: 12px;
   align-items: center;
   gap: 7px;
-  background: transparent;
+  background: var(--surface);
   color: var(--muted);
   font-size: 14px;
   font-weight: 650;
@@ -567,7 +565,6 @@ main {
 
   html, body, #app, .app-shell { background: #000; }
   .eyebrow { color: #ffd633; }
-  .main-nav { background: rgba(18, 18, 20, 0.92); }
 }
 
 @media (max-width: 760px) {
@@ -576,9 +573,9 @@ main {
   .main-nav {
     display: grid;
     min-width: 0;
-    padding: 4px;
-    border-radius: 16px;
+    padding: 0;
     flex: 1;
+    gap: 4px;
     grid-template-columns: repeat(4, 1fr);
     box-shadow: none;
   }
