@@ -87,18 +87,15 @@ button:focus-visible, input:focus-visible {
 
 .app-shell {
   min-height: 100vh;
-  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
 
 .topbar {
-  position: sticky;
-  z-index: 10;
-  top: env(safe-area-inset-top);
   display: flex;
   width: min(1180px, 100%);
-  min-height: 72px;
+  min-height: calc(40px + env(safe-area-inset-top));
   margin: 0 auto;
-  padding: 12px 24px;
+  padding: env(safe-area-inset-top) 24px 0;
   align-items: center;
   justify-content: flex-end;
   gap: 16px;
@@ -584,7 +581,11 @@ main {
 }
 
 @media (max-width: 760px) {
-  .topbar { min-height: 62px; padding: 9px 10px; gap: 8px; }
+  .topbar {
+    min-height: calc(46px + env(safe-area-inset-top));
+    padding: env(safe-area-inset-top) 10px 0;
+    gap: 8px;
+  }
 
   .main-nav {
     display: grid;
