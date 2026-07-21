@@ -633,7 +633,7 @@ export class App {
 			await this.offlineStore.updateTrack(track);
 			if (liked && recommended) void this.safeFeedback('like', recommended);
 			this.resetLikedTracks();
-			this.showToast(liked ? 'Added to Liked' : 'Removed from Liked');
+			if (!liked) this.showToast('Removed from Liked');
 		} catch (error) {
 			Object.assign(track, previous);
 			this.renderPlayer();

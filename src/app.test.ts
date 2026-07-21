@@ -480,7 +480,7 @@ describe('App UI integration', () => {
 		await settle();
 
 		expect(like.disabled).toBe(false);
-		expect(root.querySelector('#toast')?.textContent).toBe('Added to Liked');
+		expect(root.querySelector('#toast')?.textContent).toBe('');
 		expect(replace).toHaveBeenCalled();
 	});
 
