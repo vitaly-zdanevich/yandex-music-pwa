@@ -66,6 +66,7 @@ export interface MusicRequest {
 	method?: 'GET' | 'POST';
 	query?: Record<string, string | number | boolean | undefined>;
 	body?: RequestBody;
+	retry?: 'transient';
 }
 
 export interface MusicTransport {

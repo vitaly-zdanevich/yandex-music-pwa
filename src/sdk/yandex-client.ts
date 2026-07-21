@@ -167,6 +167,7 @@ export class YandexMusicClient {
 			path: `/users/${encodeURIComponent(uid)}/likes/tracks/${action}`,
 			method: 'POST',
 			body: { kind: 'form', value: { 'track-ids': trackId } },
+			retry: 'transient',
 		});
 	}
 
@@ -176,6 +177,7 @@ export class YandexMusicClient {
 			path: `/users/${encodeURIComponent(uid)}/dislikes/tracks/${action}`,
 			method: 'POST',
 			body: { kind: 'form', value: { 'track-ids': trackId } },
+			retry: 'transient',
 		});
 	}
 

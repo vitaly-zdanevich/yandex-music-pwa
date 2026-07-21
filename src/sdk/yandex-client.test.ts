@@ -65,11 +65,13 @@ describe('YandexMusicClient', () => {
 				path: '/users/10/likes/tracks/add-multiple',
 				method: 'POST',
 				body: { kind: 'form', value: { 'track-ids': '20' } },
+				retry: 'transient',
 			},
 			{
 				path: '/users/10/dislikes/tracks/remove',
 				method: 'POST',
 				body: { kind: 'form', value: { 'track-ids': '20' } },
+				retry: 'transient',
 			},
 		]);
 	});

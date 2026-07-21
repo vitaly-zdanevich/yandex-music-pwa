@@ -142,6 +142,8 @@ beforeEach(() => {
 	cachedTracks = new Map();
 	likedTracks = [likedTrack];
 	objectUrlSequence = 0;
+	featuredTrack.liked = false;
+	featuredTrack.disliked = false;
 
 	vi.spyOn(URL, 'createObjectURL').mockImplementation(() => `blob:test-${++objectUrlSequence}`);
 	vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
@@ -440,6 +442,37 @@ describe('App UI integration', () => {
 		expect(navButton('player').getAttribute('aria-current')).toBe('page');
 		expect(root.querySelector('#track-title')?.textContent).toBe('Track 88');
 		expect(root.querySelector('#source-label')?.textContent).toBe('Offline download');
+	});
+
+	it('pauses background caching while a persistent reaction is pending, then resumes it', async () => {
+		let finishLike = (): void => undefined;
+		const pendingLike = new Promise<void>((resolve) => {
+			finishLike = resolve;
+		});
+		vi.mocked(YandexMusicClient.prototype.setLiked).mockReturnValueOnce(pendingLike);
+		const app = new App(root);
+		await app.init();
+		await settle();
+		const cancel = vi.mocked(CacheCoordinator.prototype.cancel);
+		const replace = vi.mocked(CacheCoordinator.prototype.replace);
+		cancel.mockClear();
+		replace.mockClear();
+
+		const like = root.querySelector<HTMLButtonElement>('#like-button')!;
+		like.click();
+		await Promise.resolve();
+
+		expect(cancel).toHaveBeenCalledOnce();
+		expect(like.disabled).toBe(true);
+		expect(like.getAttribute('aria-pressed')).toBe('true');
+		expect(replace).not.toHaveBeenCalled();
+
+		finishLike();
+		await settle();
+
+		expect(like.disabled).toBe(false);
+		expect(root.querySelector('#toast')?.textContent).toBe('Added to Liked');
+		expect(replace).toHaveBeenCalled();
 	});
 
 	it('persists an adjustable offline-track limit and immediately recalculates the cache horizon', async () => {

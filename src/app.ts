@@ -252,6 +252,7 @@ export class App {
 			navigationVersion === this.navigationVersion &&
 			cacheAheadCount === this.cacheAheadCount &&
 			this.connected &&
+			!this.reactionTrackId &&
 			!this.offlinePlayback &&
 			navigator.onLine
 		);
@@ -603,6 +604,7 @@ export class App {
 		if (this.reactionTrackId) return;
 		const recommended = this.currentRecommended;
 		this.reactionTrackId = track.id;
+		this.cache.cancel();
 		const liked = !track.liked;
 		const previous = { liked: track.liked, disliked: track.disliked };
 		track.liked = liked;
@@ -619,8 +621,10 @@ export class App {
 			this.renderPlayer();
 			this.showToast(toMessage(error), 'error');
 		} finally {
-			if (this.reactionTrackId === track.id) this.reactionTrackId = undefined;
+			const ownsReaction = this.reactionTrackId === track.id;
+			if (ownsReaction) this.reactionTrackId = undefined;
 			if (this.currentTrack?.id === track.id) this.renderPlayer();
+			if (ownsReaction && this.connected && !this.offlinePlayback && navigator.onLine) void this.ensureQueueAndCache();
 		}
 	}
 
@@ -630,6 +634,7 @@ export class App {
 		if (this.reactionTrackId) return;
 		const recommended = this.currentRecommended;
 		this.reactionTrackId = track.id;
+		this.cache.cancel();
 		const previous = { liked: track.liked, disliked: track.disliked };
 		track.disliked = true;
 		track.liked = false;
@@ -646,8 +651,10 @@ export class App {
 			this.renderPlayer();
 			this.showToast(toMessage(error), 'error');
 		} finally {
-			if (this.reactionTrackId === track.id) this.reactionTrackId = undefined;
+			const ownsReaction = this.reactionTrackId === track.id;
+			if (ownsReaction) this.reactionTrackId = undefined;
 			if (this.currentTrack?.id === track.id) this.renderPlayer();
+			if (ownsReaction && this.connected && !this.offlinePlayback && navigator.onLine) void this.ensureQueueAndCache();
 		}
 	}
 
