@@ -15,21 +15,22 @@ jobs:
   web:
     name: Web tests and production build
     runs-on: ubuntu-latest
-    env:
-      VITE_API_BASE_URL: https://ezsc7kdtvlfw3kc2tgb27eqube0ejqdu.lambda-url.eu-central-1.on.aws
-      VITE_BASE_PATH: /yandex-music-pwa/
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
       - run: npm ci
       - run: npm run test:web
-      - run: npm run build
+      - name: Build production PWA
+        run: npm run build
+        env:
+          VITE_API_BASE_URL: https://ezsc7kdtvlfw3kc2tgb27eqube0ejqdu.lambda-url.eu-central-1.on.aws
+          VITE_BASE_PATH: /yandex-music-pwa/
       - name: Upload GitHub Pages artifact
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: actions/upload-pages-artifact@v4
+        uses: actions/upload-pages-artifact@v5
         with:
           path: dist
 
@@ -40,7 +41,7 @@ jobs:
       run:
         working-directory: proxy
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy,rustfmt
@@ -69,7 +70,7 @@ jobs:
       run:
         working-directory: infra/terraform
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: hashicorp/setup-terraform@v3
       - run: terraform fmt -check -recursive
       - run: terraform init -backend=false
@@ -90,4 +91,4 @@ jobs:
     steps:
       - name: Deploy PWA
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
