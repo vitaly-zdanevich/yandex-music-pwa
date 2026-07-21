@@ -1,5 +1,17 @@
 # My Wave for Yandex Music
 
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=vitaly-zdanevich_yandex-music-pwa&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=vitaly-zdanevich_yandex-music-pwa)
+[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=vitaly-zdanevich_yandex-music-pwa&metric=coverage)](https://sonarcloud.io/summary/new_code?id=vitaly-zdanevich_yandex-music-pwa)
+[![Bugs](https://sonarcloud.io/api/project_badges/measure?project=vitaly-zdanevich_yandex-music-pwa&metric=bugs)](https://sonarcloud.io/summary/new_code?id=vitaly-zdanevich_yandex-music-pwa)
+[![Vulnerabilities](https://sonarcloud.io/api/project_badges/measure?project=vitaly-zdanevich_yandex-music-pwa&metric=vulnerabilities)](https://sonarcloud.io/summary/new_code?id=vitaly-zdanevich_yandex-music-pwa)
+[![Code Smells](https://sonarcloud.io/api/project_badges/measure?project=vitaly-zdanevich_yandex-music-pwa&metric=code_smells)](https://sonarcloud.io/summary/new_code?id=vitaly-zdanevich_yandex-music-pwa)
+[![Duplicated Lines](https://sonarcloud.io/api/project_badges/measure?project=vitaly-zdanevich_yandex-music-pwa&metric=duplicated_lines_density)](https://sonarcloud.io/summary/new_code?id=vitaly-zdanevich_yandex-music-pwa)
+[![Maintainability](https://sonarcloud.io/api/project_badges/measure?project=vitaly-zdanevich_yandex-music-pwa&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=vitaly-zdanevich_yandex-music-pwa)
+[![Reliability](https://sonarcloud.io/api/project_badges/measure?project=vitaly-zdanevich_yandex-music-pwa&metric=reliability_rating)](https://sonarcloud.io/summary/new_code?id=vitaly-zdanevich_yandex-music-pwa)
+[![Security](https://sonarcloud.io/api/project_badges/measure?project=vitaly-zdanevich_yandex-music-pwa&metric=security_rating)](https://sonarcloud.io/summary/new_code?id=vitaly-zdanevich_yandex-music-pwa)
+[![Lines of Code](https://sonarcloud.io/api/project_badges/measure?project=vitaly-zdanevich_yandex-music-pwa&metric=ncloc)](https://sonarcloud.io/summary/new_code?id=vitaly-zdanevich_yandex-music-pwa)
+[![Technical Debt](https://sonarcloud.io/api/project_badges/measure?project=vitaly-zdanevich_yandex-music-pwa&metric=sqale_index)](https://sonarcloud.io/summary/new_code?id=vitaly-zdanevich_yandex-music-pwa)
+
 A small, installable Yandex Music client focused on one job: playing personal recommendations quickly, including on an older iPhone. The web app is framework-free TypeScript, targets Safari on iOS 15, and is minified for production.
 
 This is an unofficial client. It is not affiliated with Yandex and uses private, undocumented Yandex Music endpoints that can change without notice.
@@ -95,12 +107,13 @@ When changing `HTTP_SERVER_ADDR`, update the target in `vite.config.ts` to match
 
 ```sh
 npm test                 # Vitest and Rust tests
+npm run test:web:coverage # TypeScript LCOV in coverage/lcov.info
 npm run typecheck        # browser and Vite TypeScript projects
 npm run build            # typecheck, minify, and emit dist/
 npm run build:proxy      # native release build for the current machine
 ```
 
-CI also checks Rust formatting and Clippy, performs an ARM64 release check with `target-cpu=neoverse-n1`, validates Terraform, runs the browser tests, and creates a production web build. Every push to `main` deploys that build to GitHub Pages only after all three CI jobs pass. See `.github/workflows/ci.yml`.
+CI also checks Rust formatting and Clippy, performs an ARM64 release check with `target-cpu=neoverse-n1`, validates Terraform, runs the browser tests, and creates a production web build. Every push to `main` deploys that build to GitHub Pages only after all three CI jobs pass. The separate Sonar workflow generates TypeScript and Rust LCOV reports before scanning both source trees. See `.github/workflows/ci.yml` and `.github/workflows/build.yml`.
 
 The Vite production configuration targets Safari 15, minifies JavaScript and CSS, omits source maps, and generates the app-shell service worker.
 

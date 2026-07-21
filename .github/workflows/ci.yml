@@ -49,19 +49,19 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: proxy
-      - name: Install ARM64 C toolchain
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu
+      - uses: taiki-e/install-action@a6b2e2dcd845ddd7f509ce4f3ed3d922b80cc5d9 # v2.84.0
+        with:
+          tool: cargo-lambda@1.9.1
+          fallback: none
       - run: cargo fmt --check
       - run: cargo test --locked
       - run: cargo clippy --all-targets --locked -- -D warnings
       - name: Link native Lambda ARM64 target
         env:
-          CC_aarch64_unknown_linux_gnu: aarch64-linux-gnu-gcc
-          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS: -C target-cpu=neoverse-n1
-        run: cargo build --release --locked --target aarch64-unknown-linux-gnu --bin bootstrap
+          ZIG_GLOBAL_CACHE_DIR: ${{ runner.temp }}/zig-global-cache
+          ZIG_LOCAL_CACHE_DIR: ${{ runner.temp }}/zig-local-cache
+        run: cargo lambda build --release --locked --arm64 --bin bootstrap
 
   terraform:
     name: Terraform validation

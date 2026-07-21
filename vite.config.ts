@@ -41,7 +41,10 @@ export default defineConfig({
     environment: 'node',
     setupFiles: ['./src/test/setup.ts'],
     coverage: {
-      reporter: ['text', 'html'],
+      provider: 'v8',
+      reporter: ['text', 'html', 'lcov'],
+      include: ['src/**/*.ts'],
+      exclude: ['src/**/*.test.ts', 'src/test/**', 'src/vite-env.d.ts'],
     },
   },
 });
