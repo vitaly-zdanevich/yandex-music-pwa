@@ -30,10 +30,14 @@ set it for the browser PWA: an HTML audio element cannot attach that custom
 header to its range requests, and Preferences does not persist a proxy secret.
 
 When `ALLOWED_ORIGIN` is set, every `/api/*` request must carry that exact
-`Origin`; missing and mismatched origins are rejected. Set `crossorigin="anonymous"`
-on the online audio element so iOS sends `Origin` on fallback media requests.
-This is browser-origin hardening, not an unforgeable client authentication
-scheme; keep the personal Function URL private where practical.
+`Origin`; missing and mismatched origins are rejected. Every `/api/*` request
+must also have either an iPhone-on-iOS-15 user agent or a Firefox-on-Linux user
+agent. `/healthz` remains available without either header. The Lambda cannot
+observe screen dimensions, so the Firefox 1200×1920 check is enforced by the
+PWA only. Set `crossorigin="anonymous"` on the online audio element so iOS sends
+`Origin` on fallback media requests. Origin and user-agent checks are spoofable
+casual-use deterrents, not client authentication; keep the personal Function
+URL private where practical.
 
 ## Settings contract
 

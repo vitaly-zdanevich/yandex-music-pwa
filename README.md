@@ -23,6 +23,7 @@ This is an unofficial client. It is not affiliated with Yandex and uses private,
 - A rolling foreground cache of the next 10 recommendations and their artwork
 - An Offline screen with playback, exact stored-byte usage, per-track removal, and remove-all
 - A Preferences screen that reports the proxy connection state without ever accepting, transmitting, or storing a Yandex OAuth token
+- A casual-use client gate that starts the player only for an iPhone on iOS 15, or Firefox on Linux at an exact 1200×1920 screen; this is a deterrent, not authentication
 - Light and dark appearances via `prefers-color-scheme`; the dark document background is exactly `#000`
 - iOS home-screen icons, service-worker app-shell caching, Media Session controls, and an iOS 15 build target
 - A native Rust Lambda proxy, ARM64/Neoverse N1 deployment, Terraform, deployment/log scripts, tests, and GitHub Actions CI
@@ -48,7 +49,7 @@ GitHub Pages                         AWS                              Yandex
                             OAuth token, signing key
 ```
 
-CloudFront is not involved. The static app can live on GitHub Pages for free and calls a Lambda Function URL directly. CORS is restricted to the exact configured PWA origin.
+CloudFront is not involved. The static app can live on GitHub Pages for free and calls a Lambda Function URL directly. CORS is restricted to the exact configured PWA origin. The Lambda additionally accepts `/api/*` only from an iPhone-on-iOS-15 user agent or Firefox on Linux; `/healthz` stays open. Screen dimensions are unavailable to Lambda, so the exact 1200×1920 Firefox check runs in the PWA before its service worker, application, or API client starts.
 
 For a plaintext track, `GET /api/media/resolve/:id` returns a short-lived `directUrl` and a Lambda `url` fallback. Playback and offline caching try the Yandex CDN URL first. If browser CORS prevents a download, the native fallback forwards it without buffering the full track in Lambda memory.
 
@@ -248,6 +249,6 @@ Browser-specific implementations remain in `src/adapters/`, playback in `src/pla
 - Yandex Music does not publish or support the endpoints used here. Responses, signatures, and playback rules can change at any time.
 - A valid account and any subscription required by Yandex for full-track or high-quality playback remain necessary.
 - Signed CDN URLs are short-lived and must not be treated as permanent download links.
-- The Function URL is public. Exact-Origin checks and CORS stop ordinary cross-site browser use, but they are not authentication and can be forged by non-browser clients. Anyone who obtains the URL can consume invocations and act through the stored account on the allowlisted routes; reserved concurrency and Budgets are not hard spending caps.
+- The Function URL is public. Exact-Origin, user-agent, and PWA screen checks stop casual use but are not authentication and can be forged. Anyone who obtains the URL can consume invocations and act through the stored account on the allowlisted routes; reserved concurrency and Budgets are not hard spending caps.
 - The private protocol and highest-quality containers have unit-tested signature/decryption handling, but still need a live-account test and a physical iOS 15 smoke test before relying on them in production.
 - Before deploying or distributing this client, verify that your use complies with Yandex's current terms, applicable copyright rules, and your AWS account policies.

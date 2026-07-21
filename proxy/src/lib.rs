@@ -179,7 +179,10 @@ impl App {
 
     async fn handle(&self, request: IncomingRequest) -> ProxyResponse {
         let request_origin = request.headers.get(ORIGIN).cloned();
-        let mut response = match self.validate_browser_origin(&request) {
+        let request_validation = self
+            .validate_browser_origin(&request)
+            .and_then(|()| validate_client_user_agent(&request));
+        let mut response = match request_validation {
             Err(error) => error.into_response(),
             Ok(()) if request.method == Method::OPTIONS => self.preflight_response(&request),
             Ok(()) => match self.validate_origin_verify(&request) {
@@ -1439,6 +1442,63 @@ fn allowed_yandex_route(method: &Method, path: &str) -> bool {
     }
 }
 
+fn validate_client_user_agent(request: &IncomingRequest) -> Result<(), AppError> {
+    let path = request.uri.path();
+    if path != "/api" && !path.starts_with("/api/") {
+        return Ok(());
+    }
+
+    let allowed = request
+        .headers
+        .get(USER_AGENT)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(is_allowed_client_user_agent);
+    if allowed {
+        Ok(())
+    } else {
+        Err(AppError::new(StatusCode::FORBIDDEN, "Unsupported client"))
+    }
+}
+
+fn is_allowed_client_user_agent(user_agent: &str) -> bool {
+    is_iphone_ios_15_user_agent(user_agent) || is_linux_firefox_user_agent(user_agent)
+}
+
+fn is_iphone_ios_15_user_agent(user_agent: &str) -> bool {
+    let apple_webkit = user_agent.starts_with("Mozilla/5.0 (")
+        && user_agent.contains("AppleWebKit/")
+        && user_agent.contains("(KHTML, like Gecko)");
+    apple_webkit
+        && user_agent.contains("(iPhone;")
+        && version_token_is_15(user_agent, "CPU iPhone OS ")
+}
+
+fn is_linux_firefox_user_agent(user_agent: &str) -> bool {
+    user_agent.starts_with("Mozilla/5.0 (")
+        && user_agent.contains("Linux")
+        && !user_agent.contains("Android")
+        && user_agent.contains("Gecko/20100101")
+        && numeric_version_token(user_agent, "Firefox/")
+}
+
+fn version_token_is_15(user_agent: &str, marker: &str) -> bool {
+    let Some(version) = user_agent.split_once(marker).map(|(_, version)| version) else {
+        return false;
+    };
+    version.starts_with("15")
+        && matches!(
+            version.as_bytes().get(2),
+            None | Some(b'.' | b'_' | b' ' | b')' | b';')
+        )
+}
+
+fn numeric_version_token(user_agent: &str, marker: &str) -> bool {
+    user_agent
+        .split_once(marker)
+        .and_then(|(_, version)| version.as_bytes().first())
+        .is_some_and(u8::is_ascii_digit)
+}
+
 fn decode_identifier(value: &str) -> Option<String> {
     let decoded = percent_decode_str(value).decode_utf8().ok()?;
     if decoded.is_empty()
@@ -1668,6 +1728,10 @@ impl From<&'static str> for AppError {
 mod tests {
     use super::*;
 
+    const IPHONE_IOS_15_USER_AGENT: &str = "Mozilla/5.0 (iPhone; CPU iPhone OS 15_7_9 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.6 Mobile/15E148 Safari/604.1";
+    const LINUX_FIREFOX_USER_AGENT: &str =
+        "Mozilla/5.0 (X11; Linux x86_64; rv:141.0) Gecko/20100101 Firefox/141.0";
+
     #[test]
     fn yandex_route_allowlist_is_exact() {
         for (method, path) in [
@@ -1696,6 +1760,91 @@ mod tests {
         ] {
             assert!(!allowed_yandex_route(&method, path), "{method} {path}");
         }
+    }
+
+    #[test]
+    fn client_user_agent_allowlist_accepts_iphone_ios_15_and_linux_firefox() {
+        for value in [IPHONE_IOS_15_USER_AGENT, LINUX_FIREFOX_USER_AGENT] {
+            assert!(is_allowed_client_user_agent(value), "{value}");
+        }
+    }
+
+    #[test]
+    fn client_user_agent_allowlist_rejects_other_clients() {
+        for value in [
+            "",
+            "curl/8.14.1",
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 14_8 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148",
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148",
+            "Mozilla/5.0 (iPad; CPU OS 15_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.4 Mobile/15E148 Safari/604.1",
+            "Mozilla/5.0 (iPod touch; CPU iPhone OS 15_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.1 Mobile/15E148 Safari/604.1",
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36",
+            "Mozilla/5.0 (Android 15; Mobile; rv:141.0) Gecko/20100101 Firefox/141.0",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:141.0) Gecko/20100101 Firefox/141.0",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:141.0) Gecko/20100101 Firefox/141.0",
+            "Linux Firefox/141.0",
+        ] {
+            assert!(!is_allowed_client_user_agent(value), "{value}");
+        }
+    }
+
+    #[tokio::test]
+    async fn client_user_agent_gate_runs_before_api_dispatch_but_not_health() {
+        let app = test_app(Some("https://music.example"));
+
+        let blocked = app
+            .handle(incoming(
+                Method::GET,
+                "/api/settings/status",
+                Some("https://music.example"),
+            ))
+            .await;
+        assert_eq!(blocked.status(), StatusCode::FORBIDDEN);
+        assert_eq!(
+            blocked
+                .headers()
+                .get(ACCESS_CONTROL_ALLOW_ORIGIN)
+                .and_then(|value| value.to_str().ok()),
+            Some("https://music.example")
+        );
+
+        let health = app.handle(incoming(Method::GET, "/healthz", None)).await;
+        assert_eq!(health.status(), StatusCode::NO_CONTENT);
+
+        let mut allowed = incoming(
+            Method::GET,
+            "/api/settings/status",
+            Some("https://music.example"),
+        );
+        allowed.headers.insert(
+            USER_AGENT,
+            HeaderValue::from_static(IPHONE_IOS_15_USER_AGENT),
+        );
+        assert_eq!(app.handle(allowed).await.status(), StatusCode::OK);
+
+        let blocked_preflight = app
+            .handle(incoming(
+                Method::OPTIONS,
+                "/api/settings/status",
+                Some("https://music.example"),
+            ))
+            .await;
+        assert_eq!(blocked_preflight.status(), StatusCode::FORBIDDEN);
+
+        let mut allowed_preflight = incoming(
+            Method::OPTIONS,
+            "/api/settings/status",
+            Some("https://music.example"),
+        );
+        allowed_preflight.headers.insert(
+            USER_AGENT,
+            HeaderValue::from_static(LINUX_FIREFOX_USER_AGENT),
+        );
+        assert_eq!(
+            app.handle(allowed_preflight).await.status(),
+            StatusCode::NO_CONTENT
+        );
     }
 
     #[test]
