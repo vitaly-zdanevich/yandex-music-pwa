@@ -190,6 +190,8 @@ describe('AudioPlayer', () => {
 		await player.play();
 		audio.currentTime = 47;
 		audio.dispatchEvent(new Event('timeupdate'));
+		audio.currentTime = 0.1;
+		audio.dispatchEvent(new Event('timeupdate'));
 		audio.currentTime = 0;
 
 		audio.dispatchEvent(new Event('error'));
@@ -251,7 +253,7 @@ describe('AudioPlayer', () => {
 		await player.play();
 		audio.dispatchEvent(new Event('error'));
 		player.load({ ...track, id: '2' }, 'https://lambda.example/api/media/stream?track=2', false, undefined, true);
-		await vi.advanceTimersByTimeAsync(1_500);
+		await vi.advanceTimersByTimeAsync(500);
 		expect(audio.src).toContain('track=2');
 		expect(audio.load).toHaveBeenCalledTimes(2);
 	});
@@ -301,6 +303,14 @@ describe('AudioPlayer', () => {
 		expect(onError).toHaveBeenCalledOnce();
 		expect(onError).toHaveBeenCalledWith('This track could not be played.');
 		expect(audio.load).toHaveBeenCalledTimes(4);
+
+		await player.play();
+		expect(audio.load).toHaveBeenCalledTimes(5);
+		expect(onError).toHaveBeenCalledOnce();
+		audio.dispatchEvent(new Event('error'));
+		await vi.advanceTimersByTimeAsync(500);
+		expect(audio.load).toHaveBeenCalledTimes(6);
+		expect(onError).toHaveBeenCalledOnce();
 	});
 
 	it('primes synchronously without reporting playback or advancing the queue', () => {
