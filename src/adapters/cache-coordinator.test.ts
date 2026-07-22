@@ -90,4 +90,42 @@ describe('CacheCoordinator', () => {
 		expect(progress.at(-1)?.pending).toBe(0);
 		expect(progress.at(-1)?.current).toBeUndefined();
 	});
+
+	it('retains a completed superseded download when automatic removal is disabled', async () => {
+		const store = storeStub();
+		let finishPut = (): void => undefined;
+		vi.mocked(store.put).mockImplementationOnce(
+			() =>
+				new Promise((resolve) => {
+					finishPut = () =>
+						resolve({
+							id: track.id,
+							track,
+							audio: new Blob(['audio']),
+							audioBytes: 5,
+							artworkBytes: 0,
+							cachedAt: 1,
+						});
+				}),
+		);
+		const media: MediaResolver = {
+			resolve: vi.fn().mockResolvedValue({
+				url: 'https://cdn.yandex.net/audio.m4a',
+				proxyUrl: 'https://lambda.example/api/media/stream?audio',
+				codec: 'aac-mp4',
+				bitrate: 256,
+				quality: 'high',
+			}),
+			proxyArtwork: vi.fn(),
+		};
+		vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(new Blob(['audio']), { status: 200 })));
+		const coordinator = new CacheCoordinator(store, media, () => undefined, () => false);
+		coordinator.enqueue([{ ...track, artworkUrl: undefined }]);
+
+		await vi.waitFor(() => expect(store.put).toHaveBeenCalledOnce());
+		coordinator.replace([]);
+		finishPut();
+		await new Promise<void>((resolve) => setTimeout(resolve, 0));
+		expect(store.remove).not.toHaveBeenCalled();
+	});
 });

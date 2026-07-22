@@ -699,6 +699,104 @@ describe('App UI integration', () => {
 		expect(replace.mock.calls[replace.mock.calls.length - 1]?.[0]).toHaveLength(0);
 	});
 
+	it('keeps automatic removal disabled only when the retention preference is checked', async () => {
+		const app = new App(root);
+		await app.init();
+		await settle();
+
+		const preference = root.querySelector<HTMLInputElement>('#keep-offline-tracks')!;
+		const prune = vi.mocked(IndexedDbOfflineStore.prototype.prune);
+		expect(preference.checked).toBe(false);
+		expect(preference.labels?.[0]?.textContent).toContain('Do not remove offline tracks');
+
+		prune.mockClear();
+		preference.checked = true;
+		preference.dispatchEvent(new Event('change'));
+		await settle();
+
+		expect(preference.checked).toBe(true);
+		expect(window.localStorage.getItem('yandex-music-pwa:keep-offline-tracks:v1')).toBe('true');
+		expect(root.querySelector('#offline-retention-help')?.textContent).toContain('only adds tracks');
+		expect(prune).not.toHaveBeenCalled();
+
+		preference.checked = false;
+		preference.dispatchEvent(new Event('change'));
+		await settle();
+
+		expect(window.localStorage.getItem('yandex-music-pwa:keep-offline-tracks:v1')).toBe('false');
+		expect(prune.mock.calls.at(-1)?.[0]).toEqual(
+			new Set([
+				'track-2',
+				'track-3',
+				'track-4',
+				'track-5',
+				'track-6',
+				'track-7',
+				'track-8',
+				'track-9',
+				'track-10',
+				'track-11',
+			]),
+		);
+		expect(prune.mock.calls.at(-1)?.[1]).toBeInstanceOf(AbortSignal);
+	});
+
+	it('aborts an in-flight automatic prune when retention is enabled', async () => {
+		const app = new App(root);
+		await app.init();
+		await settle();
+
+		const prune = vi.mocked(IndexedDbOfflineStore.prototype.prune);
+		prune.mockClear();
+		let markPruneStarted = (): void => undefined;
+		const pruneStarted = new Promise<void>((resolve) => {
+			markPruneStarted = resolve;
+		});
+		let observedSignal: AbortSignal | undefined;
+		prune.mockImplementationOnce(async (_ids, signal) => {
+			if (!signal) throw new Error('A prune signal is required.');
+			observedSignal = signal;
+			markPruneStarted();
+			await new Promise<void>((resolve) => signal.addEventListener('abort', () => resolve(), { once: true }));
+		});
+
+		const count = root.querySelector<HTMLInputElement>('#offline-track-count')!;
+		count.value = '8';
+		count.dispatchEvent(new Event('change'));
+		await pruneStarted;
+
+		const preference = root.querySelector<HTMLInputElement>('#keep-offline-tracks')!;
+		preference.checked = true;
+		preference.dispatchEvent(new Event('change'));
+		await settle();
+
+		expect(observedSignal?.aborted).toBe(true);
+		expect(prune).toHaveBeenCalledTimes(1);
+	});
+
+	it('restores add-only retention and still honors an explicit track removal', async () => {
+		window.localStorage.setItem('yandex-music-pwa:keep-offline-tracks:v1', 'true');
+		const offlineTrack = makeTrack(88);
+		const offlineCached = cached(offlineTrack);
+		cachedTracks.set(offlineTrack.id, offlineCached);
+		offlineRecords = [toMetadata(offlineCached)];
+		const remove = vi.mocked(IndexedDbOfflineStore.prototype.remove);
+
+		const app = new App(root);
+		await app.init();
+		await settle();
+
+		expect(root.querySelector<HTMLInputElement>('#keep-offline-tracks')?.checked).toBe(true);
+		expect(IndexedDbOfflineStore.prototype.prune).not.toHaveBeenCalled();
+		navButton('offline').click();
+		await settle();
+		root.querySelector<HTMLButtonElement>('[aria-label="Remove Track 88 from offline"]')!.click();
+		await settle();
+
+		expect(remove).toHaveBeenCalledWith(offlineTrack.id);
+		expect(root.querySelector('#offline-list')?.textContent).not.toContain(offlineTrack.title);
+	});
+
 	it('coalesces delayed cache refreshes so the latest offline limit wins', async () => {
 		const app = new App(root);
 		await app.init();

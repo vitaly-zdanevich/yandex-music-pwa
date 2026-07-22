@@ -46,7 +46,7 @@ export interface OfflineStore {
 	updateTrack(track: Track): Promise<void>;
 	list(): Promise<CachedTrackMetadata[]>;
 	ids(): Promise<Set<string>>;
-	prune(keptIds: ReadonlySet<string>): Promise<void>;
+	prune(keptIds: ReadonlySet<string>, signal?: AbortSignal): Promise<void>;
 	remove(id: string): Promise<void>;
 	clear(): Promise<void>;
 	usageBytes(): Promise<number>;
@@ -125,19 +125,34 @@ export class IndexedDbOfflineStore implements OfflineStore {
 		return new Set(await (await this.database).getAllKeys('metadata'));
 	}
 
-	async prune(keptIds: ReadonlySet<string>): Promise<void> {
+	async prune(keptIds: ReadonlySet<string>, signal?: AbortSignal): Promise<void> {
+		if (signal?.aborted) return;
 		const database = await this.database;
 		const ids = await database.getAllKeys('metadata');
 		const removedIds = ids.filter((id) => !keptIds.has(id));
-		if (!removedIds.length) return;
+		if (!removedIds.length || signal?.aborted) return;
 		const transaction = database.transaction(['metadata', 'audio'], 'readwrite');
-		await Promise.all(
-			removedIds.flatMap((id) => [
-				transaction.objectStore('metadata').delete(id),
-				transaction.objectStore('audio').delete(id),
-			]),
-		);
-		await transaction.done;
+		const abortTransaction = (): void => {
+			try {
+				transaction.abort();
+			} catch {
+				// The transaction may already have completed between events.
+			}
+		};
+		signal?.addEventListener('abort', abortTransaction, { once: true });
+		try {
+			await Promise.all(
+				removedIds.flatMap((id) => [
+					transaction.objectStore('metadata').delete(id),
+					transaction.objectStore('audio').delete(id),
+				]),
+			);
+			await transaction.done;
+		} catch (error) {
+			if (!signal?.aborted) throw error;
+		} finally {
+			signal?.removeEventListener('abort', abortTransaction);
+		}
 	}
 
 	async remove(id: string): Promise<void> {

@@ -20,6 +20,7 @@ export class CacheCoordinator {
 		private readonly store: OfflineStore,
 		private readonly media: MediaResolver,
 		private readonly onProgress: (progress: CacheProgress) => void,
+		private readonly removeSupersededDownloads: () => boolean = () => true,
 	) {}
 
 	enqueue(tracks: readonly Track[]): void {
@@ -61,7 +62,7 @@ export class CacheCoordinator {
 					await this.cacheTrack(track, this.controller.signal);
 					if (runGeneration === this.generation) {
 						this.onProgress({ pending: this.pending.size, completed: track });
-					} else if (!this.pending.has(id)) {
+					} else if (!this.pending.has(id) && this.removeSupersededDownloads()) {
 						await this.store.remove(id);
 					}
 				} catch (error) {

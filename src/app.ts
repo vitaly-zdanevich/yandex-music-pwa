@@ -10,8 +10,10 @@ import { artistNames, formatBytes, formatMediaQuality, formatTime } from './lib/
 import { formatErrorText } from './lib/error-text';
 import { loadGithubHistory } from './lib/github-history';
 import {
+	loadKeepOfflineTracks,
 	loadOfflineTrackCount,
 	normalizeOfflineTrackCount,
+	saveKeepOfflineTracks,
 	saveOfflineTrackCount,
 } from './lib/offline-preferences';
 import { AudioPlayer } from './player/audio-player';
@@ -55,7 +57,12 @@ export class App {
 	private readonly offlineStore = new IndexedDbOfflineStore();
 	private readonly media = new ProxyMediaResolver();
 	private readonly settings = new SettingsClient();
-	private readonly cache = new CacheCoordinator(this.offlineStore, this.media, (progress) => this.onCacheProgress(progress));
+	private readonly cache = new CacheCoordinator(
+		this.offlineStore,
+		this.media,
+		(progress) => this.onCacheProgress(progress),
+		() => !this.keepOfflineTracks,
+	);
 	private readonly audio = new AudioPlayer({
 		onEnded: () => void this.onEnded(),
 		onError: (message) => this.showError(message),
@@ -98,8 +105,10 @@ export class App {
 	private preparingNextTrackId?: string;
 	private commitHistoryRequested = false;
 	private cacheAheadCount = loadOfflineTrackCount();
+	private keepOfflineTracks = loadKeepOfflineTracks();
 	private cacheRefreshVersion = 0;
 	private cacheRefreshTail: Promise<void> = Promise.resolve();
+	private pruneController?: AbortController;
 	private cacheSuspendedForPlaybackRecovery = false;
 	private storageCapacityVersion = 0;
 	private readonly errorQueue: string[] = [];
@@ -183,6 +192,9 @@ export class App {
 		this.element<HTMLInputElement>('offline-track-count').addEventListener('change', (event) => {
 			this.updateOfflineTrackCount((event.currentTarget as HTMLInputElement).value);
 		});
+		this.element<HTMLInputElement>('keep-offline-tracks').addEventListener('change', (event) => {
+			this.updateKeepOfflineTracks((event.currentTarget as HTMLInputElement).checked);
+		});
 		this.element<HTMLButtonElement>('remove-all').addEventListener('click', () => void this.removeAllOffline());
 		this.element<HTMLButtonElement>('liked-more').addEventListener('click', () => void this.loadNextLikedPage());
 		this.element<HTMLButtonElement>('error-popup-close').addEventListener('click', () => this.closeErrorPopup());
@@ -231,6 +243,7 @@ export class App {
 	}
 
 	private ensureQueueAndCache(): Promise<void> {
+		this.pruneController?.abort();
 		const refreshVersion = ++this.cacheRefreshVersion;
 		const refresh = this.cacheRefreshTail.then(() => this.refreshQueueAndCache(refreshVersion));
 		this.cacheRefreshTail = refresh.catch(() => undefined);
@@ -241,15 +254,24 @@ export class App {
 		if (!this.canApplyCacheRefresh(refreshVersion)) return;
 		const navigationVersion = this.navigationVersion;
 		const cacheAheadCount = this.cacheAheadCount;
+		const keepOfflineTracks = this.keepOfflineTracks;
 		try {
 			await this.recommendations.ensureUpcoming(cacheAheadCount);
-			if (!this.canApplyCacheRefresh(refreshVersion, navigationVersion, cacheAheadCount)) return;
+			if (!this.canApplyCacheRefresh(refreshVersion, navigationVersion, cacheAheadCount, keepOfflineTracks)) return;
 			const horizon = this.recommendations.upcoming(cacheAheadCount);
 			const horizonIds = new Set(horizon.map((item) => item.track.id));
-			await this.offlineStore.prune(horizonIds);
-			if (!this.canApplyCacheRefresh(refreshVersion, navigationVersion, cacheAheadCount)) return;
+			if (!keepOfflineTracks) {
+				const controller = new AbortController();
+				this.pruneController = controller;
+				try {
+					await this.offlineStore.prune(horizonIds, controller.signal);
+				} finally {
+					if (this.pruneController === controller) this.pruneController = undefined;
+				}
+				if (!this.canApplyCacheRefresh(refreshVersion, navigationVersion, cacheAheadCount, keepOfflineTracks)) return;
+			}
 			const cachedIds = await this.offlineStore.ids();
-			if (!this.canApplyCacheRefresh(refreshVersion, navigationVersion, cacheAheadCount)) return;
+			if (!this.canApplyCacheRefresh(refreshVersion, navigationVersion, cacheAheadCount, keepOfflineTracks)) return;
 			for (const id of this.manuallyRemovedCacheIds) {
 				if (!horizonIds.has(id)) this.manuallyRemovedCacheIds.delete(id);
 				else cachedIds.add(id);
@@ -259,7 +281,7 @@ export class App {
 			this.renderPlayer();
 			void this.prepareNextPlayback();
 		} catch (error) {
-			if (this.canApplyCacheRefresh(refreshVersion, navigationVersion, cacheAheadCount)) {
+			if (this.canApplyCacheRefresh(refreshVersion, navigationVersion, cacheAheadCount, keepOfflineTracks)) {
 				this.showError(error);
 			}
 		}
@@ -269,11 +291,13 @@ export class App {
 		refreshVersion: number,
 		navigationVersion = this.navigationVersion,
 		cacheAheadCount = this.cacheAheadCount,
+		keepOfflineTracks = this.keepOfflineTracks,
 	): boolean {
 		return (
 			refreshVersion === this.cacheRefreshVersion &&
 			navigationVersion === this.navigationVersion &&
 			cacheAheadCount === this.cacheAheadCount &&
+			keepOfflineTracks === this.keepOfflineTracks &&
 			this.connected &&
 			!this.reactionTrackId &&
 			!this.cacheSuspendedForPlaybackRecovery &&
@@ -948,16 +972,36 @@ export class App {
 		);
 	}
 
+	private updateKeepOfflineTracks(value: boolean): void {
+		this.keepOfflineTracks = saveKeepOfflineTracks(value);
+		this.renderOfflinePreference();
+		if (this.connected && !this.offlinePlayback) void this.ensureQueueAndCache();
+	}
+
 	private renderOfflinePreference(): void {
 		this.element<HTMLInputElement>('offline-track-count').value = String(this.cacheAheadCount);
-		this.element<HTMLElement>('offline-preference-help').textContent =
-			this.cacheAheadCount === 0
-				? 'Automatic offline saving is disabled. Existing downloads stay until the online queue is refreshed.'
-				: `The next ${this.cacheAheadCount} recommendation${this.cacheAheadCount === 1 ? '' : 's'} will be stored with artwork while the app is open.`;
+		this.element<HTMLInputElement>('keep-offline-tracks').checked = this.keepOfflineTracks;
+		let preferenceHelp: string;
+		if (this.cacheAheadCount === 0) {
+			preferenceHelp = this.keepOfflineTracks
+				? 'Automatic offline saving is disabled. Existing downloads stay until you remove them.'
+				: 'Automatic offline saving is disabled. Existing downloads stay until the online queue is refreshed.';
+		} else {
+			preferenceHelp = `The next ${this.cacheAheadCount} recommendation${this.cacheAheadCount === 1 ? '' : 's'} will be stored with artwork while the app is open.`;
+		}
+		this.element<HTMLElement>('offline-preference-help').textContent = preferenceHelp;
 		this.element<HTMLElement>('offline-empty-message').textContent =
 			this.cacheAheadCount === 0
 				? 'Automatic offline saving is disabled in Preferences.'
 				: `The next ${this.cacheAheadCount} recommendation${this.cacheAheadCount === 1 ? ' is' : 's are'} saved automatically while this app is open.`;
+		let retentionHelp = 'Tracks outside the upcoming recommendation queue are removed automatically.';
+		if (this.keepOfflineTracks) {
+			retentionHelp =
+				this.cacheAheadCount === 0
+					? 'Existing offline tracks stay until you remove them.'
+					: 'Automatic caching only adds tracks. Use Offline to remove them.';
+		}
+		this.element<HTMLElement>('offline-retention-help').textContent = retentionHelp;
 	}
 
 	private onCacheProgress(progress: CacheProgress): void {
@@ -1570,8 +1614,13 @@ function template(): string {
 						<button id="settings-back" type="button" class="back-button"><span aria-hidden="true">‹</span> Back</button>
 						<div class="settings-control">
 							<label for="offline-track-count">Tracks to keep offline</label>
-							<input id="offline-track-count" type="number" min="0" max="50" step="1" inputmode="numeric" />
+							<input id="offline-track-count" type="number" min="0" max="50" step="1" inputmode="numeric" aria-describedby="offline-preference-help" />
 							<p id="offline-preference-help"></p>
+							<label class="retention-preference" for="keep-offline-tracks">
+								<input id="keep-offline-tracks" type="checkbox" aria-describedby="offline-retention-help" />
+								<span>Do not remove offline tracks</span>
+							</label>
+							<p id="offline-retention-help"></p>
 						</div>
 						<dl id="storage-capacity" class="storage-capacity" hidden>
 							<div><dt>Estimated space left</dt><dd id="storage-capacity-value">—</dd></div>

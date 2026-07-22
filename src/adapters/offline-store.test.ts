@@ -25,6 +25,11 @@ describe('IndexedDbOfflineStore', () => {
 			expect.arrayContaining([expect.not.objectContaining({ audio: expect.anything() })]),
 		);
 
+		const stoppedPrune = new AbortController();
+		stoppedPrune.abort();
+		await store.prune(new Set(['b']), stoppedPrune.signal);
+		expect(await store.ids()).toEqual(new Set(['a', 'b']));
+
 		await store.prune(new Set(['b']));
 		expect(await store.ids()).toEqual(new Set(['b']));
 

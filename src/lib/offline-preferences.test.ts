@@ -1,9 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+	DEFAULT_KEEP_OFFLINE_TRACKS,
 	DEFAULT_OFFLINE_TRACK_COUNT,
+	loadKeepOfflineTracks,
 	loadOfflineTrackCount,
 	MAX_OFFLINE_TRACK_COUNT,
 	normalizeOfflineTrackCount,
+	saveKeepOfflineTracks,
 	saveOfflineTrackCount,
 } from './offline-preferences';
 
@@ -93,5 +96,47 @@ describe('offline track count preferences', () => {
 
 		expect(loadOfflineTrackCount()).toBe(DEFAULT_OFFLINE_TRACK_COUNT);
 		expect(saveOfflineTrackCount(8)).toBe(8);
+	});
+});
+
+describe('offline track retention preference', () => {
+	it('is disabled by default', () => {
+		const storage = new MemoryStorage();
+		vi.stubGlobal('localStorage', storage);
+
+		expect(loadKeepOfflineTracks()).toBe(DEFAULT_KEEP_OFFLINE_TRACKS);
+		expect(loadKeepOfflineTracks()).toBe(false);
+	});
+
+	it('persists the enabled and disabled states', () => {
+		const storage = new MemoryStorage();
+		vi.stubGlobal('localStorage', storage);
+
+		expect(saveKeepOfflineTracks(true)).toBe(true);
+		expect(loadKeepOfflineTracks()).toBe(true);
+		expect(saveKeepOfflineTracks(false)).toBe(false);
+		expect(loadKeepOfflineTracks()).toBe(false);
+	});
+
+	it('treats corrupt stored values as disabled', () => {
+		const storage = new MemoryStorage();
+		storage.setItem('yandex-music-pwa:keep-offline-tracks:v1', 'yes');
+		vi.stubGlobal('localStorage', storage);
+
+		expect(loadKeepOfflineTracks()).toBe(false);
+	});
+
+	it('falls back safely when local storage is unavailable', () => {
+		vi.stubGlobal('localStorage', {
+			getItem: () => {
+				throw new DOMException('Storage unavailable');
+			},
+			setItem: () => {
+				throw new DOMException('Storage unavailable');
+			},
+		});
+
+		expect(loadKeepOfflineTracks()).toBe(false);
+		expect(saveKeepOfflineTracks(true)).toBe(true);
 	});
 });
