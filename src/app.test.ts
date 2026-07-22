@@ -878,6 +878,7 @@ describe('App UI integration', () => {
 		expect(window.localStorage.getItem('yandex-music-pwa:keep-offline-tracks:v1')).toBe('false');
 		expect(prune.mock.calls.at(-1)?.[0]).toEqual(
 			new Set([
+				'track/1',
 				'track-2',
 				'track-3',
 				'track-4',
@@ -987,8 +988,31 @@ describe('App UI integration', () => {
 
 		expect(replace).toHaveBeenCalledTimes(1);
 		expect(replace.mock.calls[0]?.[0].map((track) => track.id)).toEqual(['track-2', 'track-3']);
-		const latestHorizon = prune.mock.calls[prune.mock.calls.length - 1]?.[0];
-		expect(latestHorizon).toEqual(new Set(['track-2', 'track-3']));
+		const latestRetained = prune.mock.calls[prune.mock.calls.length - 1]?.[0];
+		expect(latestRetained).toEqual(new Set(['track-2', 'track-3', 'track/1']));
+	});
+
+	it('falls back to Lambda when Safari loses a cached Blob during playback', async () => {
+		const record = cached(featuredTrack);
+		cachedTracks.set(featuredTrack.id, record);
+		offlineRecords = [toMetadata(record)];
+
+		const app = new App(root);
+		await app.init();
+		await settle();
+		root.querySelector<HTMLButtonElement>('#play-button')!.click();
+		await settle();
+
+		const audio = root.querySelector<HTMLAudioElement>('audio')!;
+		expect(audio.src).toContain('blob:test-');
+		audio.dispatchEvent(new Event('error'));
+		await settle();
+
+		const fallback = new URL(audio.src);
+		expect(fallback.pathname).toBe('/api/media/stream');
+		expect(fallback.searchParams.get('track')).toBe(featuredTrack.id);
+		expect(root.querySelector('#play-button')?.getAttribute('aria-label')).toBe('Pause');
+		expect(root.querySelector<HTMLElement>('#error-popup')?.hidden).toBe(true);
 	});
 
 	it('assigns a preloaded cached track synchronously when an offline track ends', async () => {

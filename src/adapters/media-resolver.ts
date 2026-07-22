@@ -46,6 +46,12 @@ export class ProxyMediaResolver implements MediaResolver {
 		url.searchParams.set('source', base64UrlEncode(remoteUrl));
 		return url.toString();
 	}
+
+	proxyStreamUrl(trackId: string): string {
+		const url = apiUrl('/api/media/stream');
+		url.searchParams.set('track', trackId);
+		return url.toString();
+	}
 }
 
 function base64UrlEncode(value: string): string {

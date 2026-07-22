@@ -285,10 +285,13 @@ export class App {
 			const horizon = this.recommendations.upcoming(cacheAheadCount);
 			const horizonIds = new Set(horizon.map((item) => item.track.id));
 			if (!keepOfflineTracks) {
+				const retainedIds = new Set(horizonIds);
+				if (this.currentTrack) retainedIds.add(this.currentTrack.id);
+				if (this.audio.trackId) retainedIds.add(this.audio.trackId);
 				const controller = new AbortController();
 				this.pruneController = controller;
 				try {
-					await this.offlineStore.prune(horizonIds, controller.signal);
+					await this.offlineStore.prune(retainedIds, controller.signal);
 				} finally {
 					if (this.pruneController === controller) this.pruneController = undefined;
 				}
@@ -552,7 +555,8 @@ export class App {
 	private loadCachedTrack(track: Track, cached: CachedTrack, objectUrl = URL.createObjectURL(cached.audio)): void {
 		this.currentAudioBlob = cached.audio;
 		this.currentMediaSource = undefined;
-		this.audio.load(track, objectUrl, true);
+		const fallback = navigator.onLine ? this.media.proxyStreamUrl(track.id) : undefined;
+		this.audio.load(track, objectUrl, true, fallback);
 		this.setPlayerStatus(
 			formatMediaQuality(
 				{

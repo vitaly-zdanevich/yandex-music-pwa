@@ -35,6 +35,16 @@ describe('ProxyMediaResolver', () => {
 		expect(fetchMock.mock.calls[0]?.[1]).toEqual({ cache: 'no-store' });
 	});
 
+	it('builds a fresh proxy stream URL for cached-track recovery', () => {
+		vi.stubGlobal('window', { location: { origin: 'https://app.example' } });
+
+		const url = new URL(new ProxyMediaResolver().proxyStreamUrl('track/id'));
+
+		expect(url.origin).toBe('https://app.example');
+		expect(url.pathname).toBe('/api/media/stream');
+		expect(url.searchParams.get('track')).toBe('track/id');
+	});
+
 	it('raises the proxy error with its HTTP status', async () => {
 		vi.stubGlobal('window', { location: { origin: 'https://app.example' } });
 		vi.stubGlobal(
