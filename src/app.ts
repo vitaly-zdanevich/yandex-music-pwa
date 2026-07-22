@@ -1556,9 +1556,9 @@ function template(): string {
 					<button id="liked-more" type="button" class="secondary-button" hidden>Show more</button>
 				</section>
 
-				<section class="library-view" data-view="offline" tabindex="-1" hidden aria-labelledby="offline-title">
+				<section class="library-view" data-view="offline" tabindex="-1" hidden aria-label="Offline">
 					<div class="section-heading">
-						<div><p class="eyebrow">On this device</p><h1 id="offline-title">Offline</h1><p id="offline-usage">0 tracks · 0 B</p></div>
+						<div><p class="eyebrow">On this device</p><p id="offline-usage">0 tracks · 0 B</p></div>
 						<button id="remove-all" type="button" class="danger-button" disabled>Remove all</button>
 					</div>
 					<div id="offline-empty" class="empty-library"><div aria-hidden="true">↓</div><h2>No downloads yet</h2><p id="offline-empty-message">Recommendations are saved automatically while this app is open.</p></div>

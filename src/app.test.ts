@@ -445,6 +445,8 @@ describe('App UI integration', () => {
 		navButton('offline').click();
 		await settle();
 		expect(view('offline').hidden).toBe(false);
+		expect(view('offline').getAttribute('aria-label')).toBe('Offline');
+		expect(view('offline').querySelector('h1')).toBeNull();
 		expect(root.querySelector('#offline-usage')?.textContent).toBe('1 track · 1.5 MB');
 		expect(root.querySelector('#offline-list')?.textContent).toContain('Track 88');
 		expect(root.querySelector('#offline-list')?.textContent).toContain('Artist 88');
