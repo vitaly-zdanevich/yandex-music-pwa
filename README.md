@@ -26,7 +26,7 @@ This is an unofficial client. It is not affiliated with Yandex and uses private,
 - An Offline screen with playback, exact stored-byte usage, per-track removal, and remove-all
 - A full-width Preferences screen that reports the proxy connection state, current version, last 10 commits, and browser-estimated space left where supported, without ever accepting, transmitting, or storing a Yandex OAuth token
 - A casual-use client gate that starts the player only for an iPhone on iOS 15, or Firefox on Linux at an exact 1200×1920 screen; this is a deterrent, not authentication
-- Light and dark appearances via `prefers-color-scheme`; an inline startup style paints the selected background before the bundle loads, with dark exactly `#000`
+- Light and dark appearances via `prefers-color-scheme`; an inline startup style and device-sized iPhone launch images paint the selected background before the bundle loads, with dark exactly `#000`
 - Persistent, closable error popups with complete stack, status, cause, network, and media diagnostics; simultaneous failures are queued instead of overwritten
 - iOS home-screen icons, service-worker app-shell caching, Media Session controls, and an iOS 15 build target
 - A native Rust Lambda proxy, ARM64/Neoverse N1 deployment, Terraform, deployment/log scripts, tests, and GitHub Actions CI
@@ -243,7 +243,7 @@ Thus, one million calls can be free while compute duration or transferred bytes 
 
 Preferences only checks the server configuration and reconnects. It never asks for the token. When upgrading from a version that had a credential form, deploy the updated Lambda first, then publish the PWA and close/reopen any already-running Home Screen app once; the removed server route makes a temporarily stale client unable to submit credentials.
 
-iOS caches the Home Screen icon independently of the service worker. After an icon update, remove the existing Home Screen app and add it again; reopening alone does not refresh the small app badge shown over lock-screen artwork.
+iOS caches the Home Screen icon and native launch image independently of the service worker. After either asset changes, remove the existing Home Screen app and add it again; reopening alone does not refresh them. The launch images cover every portrait iPhone viewport supported by iOS 15 and match the current light or dark appearance before WebKit paints the document.
 
 The lock screen shows the current artwork, title, artist, and album, with play, pause, previous, and next controls. Custom like/dislike lock-screen actions are not part of the Media Session API, so those remain in the app. A track that has started can continue after locking the phone on iOS 15.4 and later. WebKit's standalone-PWA background-audio fix shipped in iOS 15.4, so iOS 15.0–15.3 cannot provide reliable screen-off playback: <https://bugs.webkit.org/show_bug.cgi?id=198277>. The player keeps one connected audio element and prepares only the next source so its `ended` handler can assign that source before yielding to IndexedDB or the network. It also treats `waiting`, `stalled`, and a frozen playback clock as recoverable stream interruptions, temporarily suspending background downloads until audio has made stable progress again. WebKit reports that screen-off sequence working by iOS 15.7.2: <https://bugs.webkit.org/show_bug.cgi?id=221413>. Treat continuous locked-screen queues as requiring iOS 15.7.2 unless a physical-device test establishes an earlier point release.
 
