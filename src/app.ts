@@ -1669,12 +1669,12 @@ function template(): string {
 								<div><dt>Album</dt><dd id="track-album">—</dd></div>
 							</dl>
 							<p id="player-status" class="player-status">Recommended for you</p>
-							<div class="track-action-row">
-								<button id="download-button" type="button" class="track-action-button">Download</button>
-								<button id="share-button" type="button" class="track-action-button">Share</button>
-							</div>
 							<details id="track-searches" class="track-searches">
-								<summary>Search</summary>
+								<summary>Actions</summary>
+								<div class="track-action-row">
+									<button id="download-button" type="button" class="track-action-button">Download</button>
+									<button id="share-button" type="button" class="track-action-button">Share</button>
+								</div>
 								<nav class="track-links" aria-label="Track links">
 									<a id="yandex-link" target="_blank" rel="noopener noreferrer">Yandex</a>
 									<a id="genius-link" target="_blank" rel="noopener noreferrer">Genius</a>

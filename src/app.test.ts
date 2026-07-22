@@ -287,10 +287,13 @@ describe('App UI integration', () => {
 		expect(root.querySelector('#source-label')?.textContent).toBe('');
 		expect(root.querySelector('#player-status')?.textContent).toBe('Lossless · AAC-MP4 · 256 kbps · 7.6 MB');
 		expect(root.querySelector<HTMLImageElement>('#artwork')?.src).toBe(featuredTrack.artworkUrl);
-		const searches = root.querySelector<HTMLDetailsElement>('#track-searches')!;
-		expect(searches.open).toBe(false);
-		searches.querySelector<HTMLElement>('summary')!.click();
-		expect(searches.open).toBe(true);
+		const actions = root.querySelector<HTMLDetailsElement>('#track-searches')!;
+		expect(actions.open).toBe(false);
+		expect(actions.querySelector('summary')?.textContent).toBe('Actions');
+		expect(actions.contains(root.querySelector('#download-button'))).toBe(true);
+		expect(actions.contains(root.querySelector('#share-button'))).toBe(true);
+		actions.querySelector<HTMLElement>('summary')!.click();
+		expect(actions.open).toBe(true);
 
 		const yandex = root.querySelector<HTMLAnchorElement>('#yandex-link')!;
 		const youtube = new URL(root.querySelector<HTMLAnchorElement>('#youtube-link')!.href);
