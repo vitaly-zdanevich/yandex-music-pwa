@@ -287,13 +287,26 @@ describe('App UI integration', () => {
 		expect(root.querySelector('#source-label')?.textContent).toBe('');
 		expect(root.querySelector('#player-status')?.textContent).toBe('Lossless · AAC-MP4 · 256 kbps · 7.6 MB');
 		expect(root.querySelector<HTMLImageElement>('#artwork')?.src).toBe(featuredTrack.artworkUrl);
-		const actions = root.querySelector<HTMLDetailsElement>('#track-searches')!;
-		expect(actions.open).toBe(false);
-		expect(actions.querySelector('summary')?.textContent).toBe('Actions');
+		const reactionRow = root.querySelector<HTMLElement>('.reaction-row')!;
+		expect(Array.from(reactionRow.children, (child) => child.id)).toEqual([
+			'dislike-button',
+			'like-button',
+			'more-button',
+		]);
+		const more = root.querySelector<HTMLButtonElement>('#more-button')!;
+		const actions = root.querySelector<HTMLElement>('#track-actions')!;
+		expect(actions.hidden).toBe(true);
+		expect(more.getAttribute('aria-expanded')).toBe('false');
 		expect(actions.contains(root.querySelector('#download-button'))).toBe(true);
 		expect(actions.contains(root.querySelector('#share-button'))).toBe(true);
-		actions.querySelector<HTMLElement>('summary')!.click();
-		expect(actions.open).toBe(true);
+		expect(actions.lastElementChild?.id).toBe('player-status');
+		more.click();
+		expect(actions.hidden).toBe(false);
+		expect(more.getAttribute('aria-expanded')).toBe('true');
+		more.click();
+		expect(actions.hidden).toBe(true);
+		expect(more.getAttribute('aria-expanded')).toBe('false');
+		more.click();
 
 		const yandex = root.querySelector<HTMLAnchorElement>('#yandex-link')!;
 		const youtube = new URL(root.querySelector<HTMLAnchorElement>('#youtube-link')!.href);

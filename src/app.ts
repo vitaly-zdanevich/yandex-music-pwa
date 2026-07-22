@@ -197,6 +197,7 @@ export class App {
 		this.element<HTMLButtonElement>('next-button').addEventListener('click', () => void this.next(true));
 		this.element<HTMLButtonElement>('like-button').addEventListener('click', () => void this.toggleLike());
 		this.element<HTMLButtonElement>('dislike-button').addEventListener('click', () => void this.dislike());
+		this.element<HTMLButtonElement>('more-button').addEventListener('click', () => this.toggleTrackActions());
 		this.element<HTMLButtonElement>('download-button').addEventListener('click', () => void this.downloadCurrent());
 		this.element<HTMLButtonElement>('share-button').addEventListener('click', () => this.shareCurrent());
 		this.element<HTMLInputElement>('progress').addEventListener('input', (event) => {
@@ -220,6 +221,15 @@ export class App {
 			if (this.connected && !this.offlinePlayback) void this.ensureQueueAndCache();
 		});
 		this.installMediaSessionHandlers();
+	}
+
+	private toggleTrackActions(): void {
+		const button = this.element<HTMLButtonElement>('more-button');
+		const panel = this.element<HTMLElement>('track-actions');
+		const expanded = panel.hidden;
+		panel.hidden = !expanded;
+		button.setAttribute('aria-expanded', String(expanded));
+		button.classList.toggle('is-active', expanded);
 	}
 
 	private async connect(): Promise<void> {
@@ -1668,9 +1678,12 @@ function template(): string {
 								<div><dt>Artist</dt><dd id="track-artist">—</dd></div>
 								<div><dt>Album</dt><dd id="track-album">—</dd></div>
 							</dl>
-							<p id="player-status" class="player-status">Recommended for you</p>
-							<details id="track-searches" class="track-searches">
-								<summary>Actions</summary>
+							<div class="reaction-row">
+								<button id="dislike-button" type="button" class="reaction-button dislike" aria-label="Dislike this track" aria-pressed="false"><span aria-hidden="true">−</span> Dislike</button>
+								<button id="like-button" type="button" class="reaction-button like" aria-label="Like this track" aria-pressed="false"><span aria-hidden="true">♥</span> Like</button>
+								<button id="more-button" type="button" class="reaction-button more" aria-expanded="false" aria-controls="track-actions"><span aria-hidden="true">…</span> More</button>
+							</div>
+							<div id="track-actions" class="track-actions" role="group" aria-label="More track actions" hidden>
 								<div class="track-action-row">
 									<button id="download-button" type="button" class="track-action-button">Download</button>
 									<button id="share-button" type="button" class="track-action-button">Share</button>
@@ -1690,10 +1703,7 @@ function template(): string {
 									<a id="wikidata-album-link" target="_blank" rel="noopener noreferrer">Wikidata album</a>
 									<a id="wikidata-artist-link" target="_blank" rel="noopener noreferrer">Wikidata artist</a>
 								</nav>
-							</details>
-							<div class="reaction-row">
-								<button id="dislike-button" type="button" class="reaction-button dislike" aria-label="Dislike this track" aria-pressed="false"><span aria-hidden="true">−</span> Dislike</button>
-								<button id="like-button" type="button" class="reaction-button like" aria-label="Like this track" aria-pressed="false"><span aria-hidden="true">♥</span> Like</button>
+								<p id="player-status" class="player-status">Recommended for you</p>
 							</div>
 							<div class="timeline">
 								<input id="progress" type="range" min="0" max="0" value="0" aria-label="Playback position" />
