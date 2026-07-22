@@ -25,7 +25,7 @@ This is an unofficial client. It is not affiliated with Yandex and uses private,
 - An Offline screen with playback, exact stored-byte usage, per-track removal, and remove-all
 - A full-width Preferences screen that reports the proxy connection state, current version, last 10 commits, and browser-estimated space left where supported, without ever accepting, transmitting, or storing a Yandex OAuth token
 - A casual-use client gate that starts the player only for an iPhone on iOS 15, or Firefox on Linux at an exact 1200×1920 screen; this is a deterrent, not authentication
-- Light and dark appearances via `prefers-color-scheme`; the dark document background is exactly `#000`
+- Light and dark appearances via `prefers-color-scheme`; an inline startup style paints the selected background before the bundle loads, with dark exactly `#000`
 - Persistent, closable error popups with complete stack, status, cause, network, and media diagnostics; simultaneous failures are queued instead of overwritten
 - iOS home-screen icons, service-worker app-shell caching, Media Session controls, and an iOS 15 build target
 - A native Rust Lambda proxy, ARM64/Neoverse N1 deployment, Terraform, deployment/log scripts, tests, and GitHub Actions CI
