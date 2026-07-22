@@ -20,7 +20,8 @@ This is an unofficial client. It is not affiliated with Yandex and uses private,
 
 - My Wave recommendations with previous/next controls, full-width artwork, artist, album, title, highest-quality codec, bitrate, and file size
 - Like and dislike actions, plus a liked-tracks screen that hydrates at most 100 tracks per page
-- Current-track audio download, native Yandex Music link sharing, Yandex, Genius, Last.fm, Wikipedia, YouTube, and Google links, plus track/album/artist searches on MusicBrainz and Wikidata
+- Current-track audio download, native Yandex Music link sharing, Yandex, Genius, LyricsTranslate, Last.fm, Wikipedia, YouTube, and Google links, plus track/album/artist searches on MusicBrainz and Wikidata
+- Exact Wikidata matching by Yandex Music track ID; a match links the title to its item and upgrades available Genius, LyricsTranslate, MusicBrainz recording, and YouTube searches to colored direct links
 - A configurable foreground cache of upcoming recommendations and their artwork (10 by default, 0–50), with an opt-in add-only mode that keeps older downloads
 - An Offline screen with playback, exact stored-byte usage, per-track removal, and remove-all
 - A full-width Preferences screen that reports the proxy connection state, current version, last 10 commits, and browser-estimated space left where supported, without ever accepting, transmitting, or storing a Yandex OAuth token
@@ -56,6 +57,8 @@ CloudFront is not involved. The static app can live on GitHub Pages for free and
 For a plaintext track, `GET /api/media/resolve/:id` returns a short-lived `directUrl` and a Lambda `url` fallback. Playback and offline caching try the Yandex CDN URL first. If browser CORS prevents a download, the native fallback forwards it without buffering the full track in Lambda memory.
 
 Yandex can encrypt its highest-quality response. Safari cannot play those CDN bytes directly, so in that case `directUrl` is deliberately omitted: the Lambda URL re-resolves the track, decrypts AES-CTR incrementally, and seeks the cipher correctly for byte-range requests. Highest quality therefore takes precedence over bypassing AWS.
+
+After rendering a numeric current track ID, the PWA queries Wikidata directly for an exact [Yandex Music track ID (P13289)](https://www.wikidata.org/wiki/Property:P13289) statement; no AWS proxy or token is involved. Successful results are cached in memory. The matched item's [Genius ID (P6218)](https://www.wikidata.org/wiki/Property:P6218), [LyricsTranslate ID (P7212)](https://www.wikidata.org/wiki/Property:P7212), [MusicBrainz recording ID (P4404)](https://www.wikidata.org/wiki/Property:P4404), and [YouTube video ID (P1651)](https://www.wikidata.org/wiki/Property:P1651) are validated before replacing their fallback search links. Offline playback skips this optional lookup.
 
 ### Audio quality
 
@@ -252,7 +255,7 @@ iOS 15 does not provide Background Sync for this use, so configured upcoming tra
 
 ## Extractable TypeScript SDK
 
-Reusable music-domain code lives in `src/sdk/` and has no DOM, audio element, IndexedDB, service-worker, or UI dependency. `YandexMusicClient` accepts the small `MusicTransport` interface, so a future package can export the types, recommendation session, cache selection policy, track-link builders, and API client while consumers supply their own HTTP transport.
+Reusable music-domain code lives in `src/sdk/` and has no DOM, audio element, IndexedDB, service-worker, or UI dependency. `YandexMusicClient` accepts the small `MusicTransport` interface, and `WikidataClient` similarly accepts `WikidataTransport`, so a future package can export the types, recommendation session, cache selection policy, identifier validation, track-link builders, and API clients while consumers supply their own HTTP transports.
 
 Browser-specific implementations remain in `src/adapters/`, playback in `src/player/`, and rendering/orchestration in `src/app.ts`. That boundary is intentional: extracting an npm SDK should not require carrying the PWA with it.
 

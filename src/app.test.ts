@@ -12,7 +12,7 @@ import { SettingsClient } from './adapters/settings-client';
 import { loadGithubHistory } from './lib/github-history';
 import { App } from './app';
 import type { LikedTrackPage, RecommendationBatch, Track } from './sdk';
-import { YandexMusicClient } from './sdk';
+import { WikidataClient, YandexMusicClient } from './sdk';
 
 vi.mock('./lib/github-history', () => ({ loadGithubHistory: vi.fn() }));
 
@@ -220,6 +220,7 @@ beforeEach(() => {
 	vi.spyOn(YandexMusicClient.prototype, 'sendFeedback').mockResolvedValue(undefined);
 
 	vi.spyOn(ProxyMediaResolver.prototype, 'resolve').mockImplementation(async (trackId) => mediaSource(trackId));
+	vi.spyOn(WikidataClient.prototype, 'findTrack').mockResolvedValue(undefined);
 	vi.spyOn(CacheCoordinator.prototype, 'replace').mockImplementation(() => undefined);
 	vi.spyOn(CacheCoordinator.prototype, 'cancel').mockImplementation(() => undefined);
 
@@ -279,6 +280,7 @@ describe('App UI integration', () => {
 		expect(root.querySelector('.topbar .brand, .topbar img')).toBeNull();
 		expect(view('player').hidden).toBe(false);
 		expect(root.querySelector('#track-title')?.textContent).toBe('Track / One');
+		expect(root.querySelector<HTMLAnchorElement>('#track-title-link')?.hasAttribute('href')).toBe(false);
 		expect(root.querySelector('#track-artist')?.textContent).toBe('Alpha, Beta');
 		expect(root.querySelector('#track-album')?.textContent).toBe('Album Name');
 		expect(root.querySelector<HTMLElement>('#source-label')?.hidden).toBe(true);
@@ -307,6 +309,9 @@ describe('App UI integration', () => {
 		expect(new URL(root.querySelector<HTMLAnchorElement>('#genius-link')!.href).searchParams.get('q')).toBe(
 			'Alpha Beta Track / One',
 		);
+		expect(
+			new URL(root.querySelector<HTMLAnchorElement>('#lyrics-translate-link')!.href).searchParams.get('query'),
+		).toBe('Track / One Alpha Beta');
 		expect(new URL(root.querySelector<HTMLAnchorElement>('#lastfm-link')!.href).searchParams.get('q')).toBe(
 			'Alpha Beta Track / One',
 		);
@@ -336,6 +341,7 @@ describe('App UI integration', () => {
 		).toEqual([
 			'yandex-link',
 			'genius-link',
+			'lyrics-translate-link',
 			'lastfm-link',
 			'wikipedia-link',
 			'youtube-link',
@@ -401,6 +407,136 @@ describe('App UI integration', () => {
 		expect(play.getAttribute('aria-label')).toBe('Play');
 		mediaHandlers.get('seekto')?.({ action: 'seekto', seekTime: 75, fastSeek: false });
 		expect(audio.currentTime).toBe(75);
+	});
+
+	it('upgrades the title and supported search buttons from exact Wikidata identifiers', async () => {
+		const exactTrack = { ...featuredTrack, id: '30233280', title: 'Last Ring' };
+		vi.mocked(YandexMusicClient.prototype.startRecommendations).mockResolvedValueOnce({
+			sessionId: 'exact-session',
+			batchId: 'exact-batch',
+			tracks: [{ track: exactTrack, batchId: 'exact-batch' }],
+		});
+		vi.mocked(WikidataClient.prototype.findTrack).mockResolvedValueOnce({
+			itemId: 'Q105978624',
+			musicBrainzRecordingId: 'e1ded706-16ec-45c3-87c4-0ae7a26f56d3',
+			youtubeVideoId: 'oKqGUk5qCtU',
+			geniusId: 'Complex-numbers-the-last-ring-lyrics',
+			lyricsTranslateId: 'complex-numbers-последнее-кольцо-lyrics.html',
+		});
+
+		const app = new App(root);
+		await app.init();
+		await settle();
+
+		const title = root.querySelector<HTMLAnchorElement>('#track-title-link')!;
+		expect(title.textContent).toBe('Last Ring');
+		expect(title.href).toBe('https://www.wikidata.org/wiki/Q105978624');
+		expect(title.target).toBe('_blank');
+		expect(title.getAttribute('aria-label')).toContain('Wikidata');
+		const exactLinks = {
+			genius: root.querySelector<HTMLAnchorElement>('#genius-link')!,
+			lyricsTranslate: root.querySelector<HTMLAnchorElement>('#lyrics-translate-link')!,
+			musicBrainz: root.querySelector<HTMLAnchorElement>('#musicbrainz-track-link')!,
+			youtube: root.querySelector<HTMLAnchorElement>('#youtube-link')!,
+		};
+		expect(exactLinks.genius.href).toBe('https://genius.com/Complex-numbers-the-last-ring-lyrics');
+		const lyricsTranslate = new URL(exactLinks.lyricsTranslate.href);
+		expect(lyricsTranslate.origin).toBe('https://lyricstranslate.com');
+		expect(decodeURIComponent(lyricsTranslate.pathname)).toBe(
+			'/complex-numbers-последнее-кольцо-lyrics.html',
+		);
+		expect(exactLinks.musicBrainz.href).toBe(
+			'https://musicbrainz.org/recording/e1ded706-16ec-45c3-87c4-0ae7a26f56d3',
+		);
+		expect(exactLinks.youtube.href).toBe('https://www.youtube.com/watch?v=oKqGUk5qCtU');
+		for (const link of Object.values(exactLinks)) {
+			expect(link.classList.contains('is-exact-match')).toBe(true);
+			expect(link.getAttribute('aria-label')).toContain('exact link from Wikidata');
+		}
+		expect(new URL(root.querySelector<HTMLAnchorElement>('#musicbrainz-album-link')!.href).pathname).toBe('/search');
+		expect(new URL(root.querySelector<HTMLAnchorElement>('#musicbrainz-artist-link')!.href).pathname).toBe('/search');
+	});
+
+	it('shows the complete Wikidata lookup failure for the current online track', async () => {
+		const exactTrack = { ...featuredTrack, id: '30233280', title: 'Last Ring' };
+		vi.mocked(YandexMusicClient.prototype.startRecommendations).mockResolvedValueOnce({
+			sessionId: 'error-session',
+			batchId: 'error-batch',
+			tracks: [{ track: exactTrack, batchId: 'error-batch' }],
+		});
+		const cause = new TypeError('Network connection was lost');
+		const failure = new Error('Could not reach Wikidata.');
+		failure.stack = 'WikidataApiError: Could not reach Wikidata.\n\tat request (wikidata-transport.ts:24:10)';
+		Object.assign(failure, { status: 503 });
+		Object.defineProperty(failure, 'cause', { value: cause });
+		vi.mocked(WikidataClient.prototype.findTrack).mockRejectedValueOnce(failure);
+
+		const app = new App(root);
+		await app.init();
+		await settle();
+
+		const popup = root.querySelector<HTMLElement>('#error-popup')!;
+		const message = root.querySelector<HTMLElement>('#error-popup-message')!;
+		expect(popup.hidden).toBe(false);
+		expect(message.textContent).toContain(failure.stack);
+		expect(message.textContent).toContain('status: 503');
+		expect(message.textContent).toContain('TypeError: Network connection was lost');
+	});
+
+	it('does not apply a late Wikidata match to the next track', async () => {
+		const first = { ...featuredTrack, id: '30233280', title: 'First track' };
+		const second = { ...makeTrack(2), id: '60050452', title: 'Second track' };
+		vi.mocked(YandexMusicClient.prototype.startRecommendations).mockResolvedValueOnce({
+			sessionId: 'stale-session',
+			batchId: 'stale-batch',
+			tracks: [first, second].map((track) => ({ track, batchId: 'stale-batch' })),
+		});
+		let finishFirstLookup = (_match: { itemId: string }): void => undefined;
+		let firstSignal: AbortSignal | undefined;
+		vi.mocked(WikidataClient.prototype.findTrack)
+			.mockImplementationOnce(
+				(_trackId, signal) =>
+					new Promise((resolve) => {
+						firstSignal = signal;
+						finishFirstLookup = resolve;
+					}),
+			)
+			.mockResolvedValueOnce(undefined);
+
+		const app = new App(root);
+		await app.init();
+		await settle();
+		root.querySelector<HTMLButtonElement>('#next-button')!.click();
+		await settle();
+		finishFirstLookup({ itemId: 'Q105978624' });
+		await settle();
+
+		expect(firstSignal?.aborted).toBe(true);
+		expect(root.querySelector('#track-title')?.textContent).toBe('Second track');
+		expect(root.querySelector<HTMLAnchorElement>('#track-title-link')?.hasAttribute('href')).toBe(false);
+	});
+
+	it('keeps an offline title plain without starting a Wikidata request', async () => {
+		const offlineTrack = { ...featuredTrack, id: '30233280', title: 'Offline track' };
+		const offlineCached = cached(offlineTrack);
+		cachedTracks.set(offlineTrack.id, offlineCached);
+		offlineRecords = [toMetadata(offlineCached)];
+		Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
+		vi.mocked(YandexMusicClient.prototype.startRecommendations).mockResolvedValueOnce({
+			sessionId: 'offline-session',
+			batchId: 'offline-batch',
+			tracks: [{ track: offlineTrack, batchId: 'offline-batch' }],
+		});
+		const findTrack = vi.mocked(WikidataClient.prototype.findTrack);
+		findTrack.mockClear();
+
+		const app = new App(root);
+		await app.init();
+		await settle();
+
+		expect(root.querySelector('#track-title')?.textContent).toBe('Offline track');
+		expect(root.querySelector<HTMLAnchorElement>('#track-title-link')?.hasAttribute('href')).toBe(false);
+		expect(findTrack).not.toHaveBeenCalled();
 	});
 
 	it('keeps autoplay intent when Next is tapped before the playing event arrives', async () => {

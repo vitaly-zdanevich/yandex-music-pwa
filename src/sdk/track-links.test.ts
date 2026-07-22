@@ -4,6 +4,7 @@ import {
 	geniusTrackSearchUrl,
 	googleTrackSearchUrl,
 	lastFmTrackSearchUrl,
+	lyricsTranslateTrackSearchUrl,
 	musicBrainzAlbumSearchUrl,
 	musicBrainzArtistSearchUrl,
 	musicBrainzTrackSearchUrl,
@@ -47,6 +48,12 @@ describe('track links', () => {
 		expect(genius.searchParams.get('q')).toBe(expectedQuery);
 		expect(`${lastFm.origin}${lastFm.pathname}`).toBe('https://www.last.fm/search/tracks');
 		expect(lastFm.searchParams.get('q')).toBe(expectedQuery);
+	});
+
+	it('builds a LyricsTranslate search from the track title and artists', () => {
+		const url = new URL(lyricsTranslateTrackSearchUrl(track));
+		expect(`${url.origin}${url.pathname}`).toBe('https://lyricstranslate.com/site-search');
+		expect(url.searchParams.get('query')).toBe('Song & Dance + Remix Artist One Артист / Two');
 	});
 
 	it('builds a Wikipedia search from the artist names', () => {
@@ -123,6 +130,7 @@ describe('track links', () => {
 			artists: [{ name: '  ' }],
 		};
 		expect(new URL(geniusTrackSearchUrl(sparse)).searchParams.get('q')).toBe('Track');
+		expect(new URL(lyricsTranslateTrackSearchUrl(sparse)).searchParams.get('query')).toBe('Track');
 		expect(new URL(musicBrainzTrackSearchUrl(sparse)).searchParams.get('query')).toBe('Track');
 		expect(new URL(musicBrainzAlbumSearchUrl(sparse)).searchParams.get('query')).toBe('');
 		expect(new URL(musicBrainzArtistSearchUrl(sparse)).searchParams.get('query')).toBe('');

@@ -57,6 +57,13 @@ export function geniusTrackSearchUrl(
 	return searchUrl('https://genius.com/search', 'q', `${artistQuery(track)} ${track.title}`.trim());
 }
 
+/** Returns a LyricsTranslate search for the track title and artists. */
+export function lyricsTranslateTrackSearchUrl(
+	track: Pick<TrackLinkDetails, 'title' | 'artists'>,
+): string {
+	return searchUrl('https://lyricstranslate.com/site-search', 'query', trackArtistQuery(track));
+}
+
 /** Returns a Last.fm track search for the artists and track title. */
 export function lastFmTrackSearchUrl(
 	track: Pick<TrackLinkDetails, 'title' | 'artists'>,

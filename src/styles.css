@@ -218,6 +218,14 @@ main {
   text-wrap: balance;
 }
 
+#track-title-link { color: inherit; text-decoration: none; }
+#track-title-link[href] {
+  text-decoration: underline;
+  text-decoration-thickness: 0.07em;
+  text-underline-offset: 0.12em;
+}
+#track-title-link[href]:focus-visible { outline: 3px solid #3b82f6; outline-offset: 4px; }
+
 .track-details {
   display: grid;
   margin: 28px 0 0;
@@ -310,6 +318,11 @@ main {
   outline: 3px solid #3b82f6;
   outline-offset: 3px;
 }
+
+#genius-link.is-exact-match { border-color: #d4d100; background: #fffc00; color: #111; }
+#lyrics-translate-link.is-exact-match { border-color: #166534; background: #166534; color: #fff; }
+#musicbrainz-track-link.is-exact-match { border-color: #8f3f72; background: #8f3f72; color: #fff; }
+#youtube-link.is-exact-match { border-color: #b91c1c; background: #b91c1c; color: #fff; }
 
 .reaction-row { display: flex; margin: 20px 0 26px; gap: 10px; }
 

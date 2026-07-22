@@ -5,6 +5,7 @@ import { ProxyMediaResolver, type MediaSource } from './adapters/media-resolver'
 import { IndexedDbOfflineStore, type CachedTrack, type CachedTrackMetadata } from './adapters/offline-store';
 import { SettingsClient } from './adapters/settings-client';
 import { estimateStorageCapacity } from './adapters/storage-capacity';
+import { HttpWikidataTransport } from './adapters/wikidata-transport';
 import { isIphoneIos15UserAgent } from './access-policy';
 import { artistNames, formatBytes, formatMediaQuality, formatTime } from './lib/format';
 import { formatErrorText } from './lib/error-text';
@@ -18,11 +19,15 @@ import {
 } from './lib/offline-preferences';
 import { AudioPlayer } from './player/audio-player';
 import {
+	geniusPageUrl,
 	geniusTrackSearchUrl,
 	googleTrackSearchUrl,
 	lastFmTrackSearchUrl,
+	lyricsTranslatePageUrl,
+	lyricsTranslateTrackSearchUrl,
 	musicBrainzAlbumSearchUrl,
 	musicBrainzArtistSearchUrl,
+	musicBrainzRecordingUrl,
 	musicBrainzTrackSearchUrl,
 	RecommendationSession,
 	selectTracksToCache,
@@ -31,12 +36,16 @@ import {
 	type LikedTrackPage,
 	type RecommendedTrack,
 	type Track,
+	WikidataClient,
+	type WikidataTrackMatch,
 	wikidataAlbumSearchUrl,
 	wikidataArtistSearchUrl,
+	wikidataItemUrl,
 	wikidataTrackSearchUrl,
 	wikipediaArtistSearchUrl,
 	YandexMusicClient,
 	yandexMusicTrackUrl,
+	youtubeVideoUrl,
 	youtubeTrackSearchUrl,
 } from './sdk';
 
@@ -57,6 +66,7 @@ export class App {
 	private readonly offlineStore = new IndexedDbOfflineStore();
 	private readonly media = new ProxyMediaResolver();
 	private readonly settings = new SettingsClient();
+	private readonly wikidata = new WikidataClient(new HttpWikidataTransport());
 	private readonly cache = new CacheCoordinator(
 		this.offlineStore,
 		this.media,
@@ -95,6 +105,10 @@ export class App {
 	private currentArtworkUrl?: string;
 	private currentAudioBlob?: Blob;
 	private currentMediaSource?: MediaSource;
+	private titleLookupTrackId?: string;
+	private titleLookupMatch?: WikidataTrackMatch;
+	private titleLookupVersion = 0;
+	private titleLookupController?: AbortController;
 	private preparedDownload?: { trackId: string; file: File };
 	private downloadVersion = 0;
 	private downloadingTrackId?: string;
@@ -328,6 +342,7 @@ export class App {
 		this.element<HTMLElement>('player-empty').hidden = hasTrack;
 		this.element<HTMLElement>('player-content').hidden = !hasTrack;
 		if (!track) {
+			this.clearTrackTitle();
 			this.invalidatePreparedNext();
 			this.resetCurrentMedia('');
 			this.element<HTMLButtonElement>('previous-button').disabled = true;
@@ -343,7 +358,8 @@ export class App {
 			return;
 		}
 
-		this.element<HTMLElement>('track-title').textContent = track.title;
+		this.renderTrackLinks(track);
+		this.renderTrackTitle(track);
 		this.element<HTMLElement>('track-artist').textContent = artistNames(track);
 		this.element<HTMLElement>('track-album').textContent = track.album?.title || 'Unknown album';
 		this.element<HTMLButtonElement>('like-button').classList.toggle('is-active', track.liked);
@@ -363,10 +379,103 @@ export class App {
 		sourceLabel.textContent = this.offlinePlayback ? 'Offline download' : '';
 		sourceLabel.hidden = !this.offlinePlayback;
 		this.currentArtworkUrl = track.artworkUrl;
-		this.renderTrackLinks(track);
 		this.renderDownloadButton(track);
 		this.updateMediaMetadata(track);
 		void this.renderCurrentArtwork(track);
+	}
+
+	private renderTrackTitle(track: Track): void {
+		const link = this.element<HTMLAnchorElement>('track-title-link');
+		link.textContent = track.title;
+		if (this.titleLookupTrackId === track.id) {
+			if (this.titleLookupMatch) this.applyWikidataMatch(track, this.titleLookupMatch);
+			return;
+		}
+
+		this.titleLookupController?.abort();
+		this.titleLookupTrackId = navigator.onLine ? track.id : undefined;
+		this.titleLookupMatch = undefined;
+		const version = ++this.titleLookupVersion;
+		link.removeAttribute('href');
+		link.removeAttribute('aria-label');
+		link.removeAttribute('target');
+		link.removeAttribute('rel');
+		if (!navigator.onLine) return;
+		const controller = new AbortController();
+		this.titleLookupController = controller;
+		void this.wikidata
+			.findTrack(track.id, controller.signal)
+			.then((match) => {
+				if (
+					!match ||
+					controller.signal.aborted ||
+					version !== this.titleLookupVersion ||
+					this.currentTrack?.id !== track.id
+				) return;
+				this.titleLookupMatch = match;
+				this.applyWikidataMatch(track, match);
+			})
+			.catch((error: unknown) => {
+				if (
+					controller.signal.aborted ||
+					version !== this.titleLookupVersion ||
+					this.currentTrack?.id !== track.id ||
+					!navigator.onLine
+				) return;
+				this.showError(error);
+			})
+			.finally(() => {
+				if (this.titleLookupController === controller) this.titleLookupController = undefined;
+			});
+	}
+
+	private applyWikidataMatch(track: Track, match: WikidataTrackMatch): void {
+		const titleLink = this.element<HTMLAnchorElement>('track-title-link');
+		const itemUrl = wikidataItemUrl(match.itemId);
+		if (itemUrl) {
+			titleLink.href = itemUrl;
+			titleLink.target = '_blank';
+			titleLink.rel = 'noopener noreferrer';
+			titleLink.setAttribute('aria-label', `${track.title} — open on Wikidata`);
+		}
+		this.applyExactTrackLink('genius-link', match.geniusId ? geniusPageUrl(match.geniusId) : undefined, 'Genius');
+		this.applyExactTrackLink(
+			'musicbrainz-track-link',
+			match.musicBrainzRecordingId ? musicBrainzRecordingUrl(match.musicBrainzRecordingId) : undefined,
+			'MusicBrainz track',
+		);
+		this.applyExactTrackLink(
+			'youtube-link',
+			match.youtubeVideoId ? youtubeVideoUrl(match.youtubeVideoId) : undefined,
+			'YouTube',
+		);
+		this.applyExactTrackLink(
+			'lyrics-translate-link',
+			match.lyricsTranslateId ? lyricsTranslatePageUrl(match.lyricsTranslateId) : undefined,
+			'LyricsTranslate',
+		);
+	}
+
+	private applyExactTrackLink(id: string, href: string | undefined, label: string): void {
+		if (!href) return;
+		const link = this.element<HTMLAnchorElement>(id);
+		link.href = href;
+		link.classList.add('is-exact-match');
+		link.setAttribute('aria-label', `${label} — exact link from Wikidata`);
+	}
+
+	private clearTrackTitle(): void {
+		this.titleLookupController?.abort();
+		this.titleLookupController = undefined;
+		this.titleLookupTrackId = undefined;
+		this.titleLookupMatch = undefined;
+		this.titleLookupVersion += 1;
+		const link = this.element<HTMLAnchorElement>('track-title-link');
+		link.textContent = '—';
+		link.removeAttribute('href');
+		link.removeAttribute('aria-label');
+		link.removeAttribute('target');
+		link.removeAttribute('rel');
 	}
 
 	private async renderCurrentArtwork(track: Track): Promise<void> {
@@ -1291,6 +1400,7 @@ export class App {
 		const links: ReadonlyArray<[string, string]> = [
 			['yandex-link', yandexMusicTrackUrl(track)],
 			['genius-link', geniusTrackSearchUrl(track)],
+			['lyrics-translate-link', lyricsTranslateTrackSearchUrl(track)],
 			['lastfm-link', lastFmTrackSearchUrl(track)],
 			['wikipedia-link', wikipediaArtistSearchUrl(track)],
 			['youtube-link', youtubeTrackSearchUrl(track)],
@@ -1302,7 +1412,12 @@ export class App {
 			['wikidata-album-link', wikidataAlbumSearchUrl(track)],
 			['wikidata-artist-link', wikidataArtistSearchUrl(track)],
 		];
-		for (const [id, href] of links) this.element<HTMLAnchorElement>(id).href = href;
+		for (const [id, href] of links) {
+			const link = this.element<HTMLAnchorElement>(id);
+			link.href = href;
+			link.classList.remove('is-exact-match');
+			link.removeAttribute('aria-label');
+		}
 	}
 
 	private shareCurrent(): void {
@@ -1548,7 +1663,7 @@ function template(): string {
 						</div>
 						<div class="player-copy">
 							<p id="source-label" class="eyebrow" hidden></p>
-							<h1 id="track-title">—</h1>
+							<h1 id="track-title"><a id="track-title-link">—</a></h1>
 							<dl class="track-details">
 								<div><dt>Artist</dt><dd id="track-artist">—</dd></div>
 								<div><dt>Album</dt><dd id="track-album">—</dd></div>
@@ -1563,6 +1678,7 @@ function template(): string {
 								<nav class="track-links" aria-label="Track links">
 									<a id="yandex-link" target="_blank" rel="noopener noreferrer">Yandex</a>
 									<a id="genius-link" target="_blank" rel="noopener noreferrer">Genius</a>
+									<a id="lyrics-translate-link" target="_blank" rel="noopener noreferrer">LyricsTranslate</a>
 									<a id="lastfm-link" target="_blank" rel="noopener noreferrer">Last.fm</a>
 									<a id="wikipedia-link" target="_blank" rel="noopener noreferrer">Wikipedia</a>
 									<a id="youtube-link" target="_blank" rel="noopener noreferrer">YouTube</a>
