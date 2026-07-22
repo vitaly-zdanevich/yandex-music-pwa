@@ -1,5 +1,6 @@
 const MAX_DEPTH = 12;
 const MAX_PROPERTIES = 100;
+const FIRST_LINE_BUNDLE_LOCATION = /(?:@|\s+\()?(?:(?:https?|blob|file):\/\/|\/)\S+\.js(?:\?\S*)?:\d+:\d+\)?$/;
 
 interface OwnProperty {
 	name: string;
@@ -59,12 +60,18 @@ function formatError(error: Error, active: Set<object>, depth: number): string {
 }
 
 function errorHeading(error: Error): string {
-	const stack = safeProperty(error, 'stack');
-	if (typeof stack === 'string' && stack.trim()) return stack;
 	const name = safeProperty(error, 'name');
 	const message = safeProperty(error, 'message');
 	const safeName = typeof name === 'string' && name ? name : 'Error';
-	return typeof message === 'string' && message ? `${safeName}: ${message}` : safeName;
+	const fallback = typeof message === 'string' && message ? `${safeName}: ${message}` : safeName;
+	const stack = safeProperty(error, 'stack');
+	if (typeof stack !== 'string' || !stack.trim()) return fallback;
+	const lines = stack.trim().split('\n');
+	const firstLine = lines[0] ?? fallback;
+	const withoutLocation = firstLine.replace(FIRST_LINE_BUNDLE_LOCATION, '').trim();
+	if (withoutLocation === firstLine.trim()) return stack;
+	lines[0] = !withoutLocation || withoutLocation === 'global code' ? fallback : withoutLocation;
+	return lines.join('\n');
 }
 
 function formatObject(value: object, active: Set<object>, depth: number): string {

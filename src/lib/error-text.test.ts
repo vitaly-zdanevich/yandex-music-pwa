@@ -35,6 +35,26 @@ describe('formatErrorText', () => {
 		expect(formatErrorText(error)).toBe('PlaybackError: offline');
 	});
 
+	it('removes a redundant bundle location from the first Safari stack line', () => {
+		const error = new TypeError('Load failed');
+		error.stack = [
+			'TypeError: Load failed@https://example.test/assets/index-AbCd.js:1:4843',
+			'promiseReactionJob@[native code]',
+		].join('\n');
+		Object.assign(error, {
+			sourceURL: 'https://example.test/assets/index-AbCd.js',
+			line: 1,
+			column: 4843,
+		});
+
+		const text = formatErrorText(error);
+		expect(text.split('\n')[0]).toBe('TypeError: Load failed');
+		expect(text).toContain('promiseReactionJob@[native code]');
+		expect(text).toContain('sourceURL: "https://example.test/assets/index-AbCd.js"');
+		expect(text).toContain('line: 1');
+		expect(text).toContain('column: 4843');
+	});
+
 	it('renders arbitrary and circular data without invoking getters', () => {
 		const details: Record<string, unknown> = {
 			attempt: 3,
